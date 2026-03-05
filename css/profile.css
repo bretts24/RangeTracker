@@ -140,7 +140,7 @@
 
 .weapon-card-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   padding: var(--space-md) var(--space-lg);
   cursor: pointer;
@@ -190,9 +190,11 @@
 
 .weapon-card-actions {
   display: flex;
-  align-items: center;
-  gap: var(--space-sm);
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-xs);
   flex-shrink: 0;
+  min-width: 80px;
 }
 
 .weapon-build-count {
@@ -206,6 +208,7 @@
   color: var(--color-text-muted);
   font-size: 0.8rem;
   transition: transform var(--transition);
+  text-align: center;
 }
 
 .weapon-card-open .weapon-chevron {
