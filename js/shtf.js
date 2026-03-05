@@ -52,14 +52,18 @@ window.SHTFModule = (() => {
     const table = tableMap[type]
     const container = document.getElementById(`shtf-${type}-content`)
 
-    const { data, error } = await window.sb
-      .from(table)
-      .select('*')
-      .eq('user_id', _userId)
-      .order('created_at', { ascending: true })
+    try {
+      const { data, error } = await window.sb
+        .from(table)
+        .select('*')
+        .eq('user_id', _userId)
+        .order('created_at', { ascending: true })
 
-    if (error) { container.innerHTML = '<p class="loading-text">Error loading data.</p>'; return }
-    renderSimpleTable(type, data || [], container)
+      if (error) { container.innerHTML = '<p class="loading-text">Error loading data: ' + Utils.esc(error.message) + '</p>'; return }
+      renderSimpleTable(type, data || [], container)
+    } catch (err) {
+      container.innerHTML = '<p class="loading-text">Failed to load data.</p>'
+    }
   }
 
   // ── Simple supply tables ───────────────────────────────────
