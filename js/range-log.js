@@ -3,13 +3,30 @@ window.RangeLogModule = (() => {
   let _userId = null
   let _initialized = false
   let _sessions = []
+  let _loadoutWeapons = []
+
+  const WEAPON_CATEGORY_LABELS = {
+    rifle: 'Rifle', pistol: 'Pistol', shotgun: 'Shotgun',
+    smg: 'SMG', pcc: 'PCC', other_weapon: 'Other',
+  }
 
   async function init(userId) {
     if (_initialized) return
     _userId = userId
     _initialized = true
     document.getElementById('rangelog-add-btn').addEventListener('click', openAddSessionModal)
-    await loadSessions()
+    await Promise.all([loadSessions(), loadLoadoutWeapons()])
+  }
+
+  async function loadLoadoutWeapons() {
+    const weaponCategories = ['rifle', 'pistol', 'shotgun', 'smg', 'pcc', 'other_weapon']
+    const { data } = await window.sb
+      .from('loadout_items')
+      .select('id, name, category')
+      .eq('user_id', _userId)
+      .in('category', weaponCategories)
+      .order('created_at', { ascending: true })
+    _loadoutWeapons = data || []
   }
 
   async function loadSessions() {
@@ -34,14 +51,13 @@ window.RangeLogModule = (() => {
       container.innerHTML = '<p class="loading-text">No range sessions yet. Hit "+ New Session" to log one.</p>'
       return
     }
-
     container.innerHTML = _sessions.map(s => renderSessionCard(s)).join('')
     bindSessionHandlers()
   }
 
   function renderSessionCard(session) {
     const meta = [
-      session.location ? `📍 ${Utils.esc(session.location)}` : '',
+      session.location   ? `📍 ${Utils.esc(session.location)}`   : '',
       session.conditions ? `🌤 ${Utils.esc(session.conditions)}` : '',
     ].filter(Boolean).join(' &nbsp;·&nbsp; ')
 
@@ -72,25 +88,20 @@ window.RangeLogModule = (() => {
   }
 
   function bindSessionHandlers() {
-    // Expand/collapse
     document.querySelectorAll('.session-header').forEach(header => {
       header.addEventListener('click', (e) => {
         if (e.target.closest('button')) return
         const card = header.closest('.session-card')
         const wasExpanded = card.classList.contains('expanded')
         card.classList.toggle('expanded', !wasExpanded)
-        if (!wasExpanded) {
-          loadEntries(card.dataset.id)
-        }
+        if (!wasExpanded) loadEntries(card.dataset.id)
       })
     })
 
-    // Delete session
     document.querySelectorAll('.delete-session-btn').forEach(btn => {
       btn.addEventListener('click', () => deleteSession(btn.dataset.id))
     })
 
-    // Add entry buttons
     document.querySelectorAll('.add-entry-btn').forEach(btn => {
       btn.addEventListener('click', () => openAddEntryModal(btn.dataset.sessionId))
     })
@@ -108,7 +119,6 @@ window.RangeLogModule = (() => {
       container.innerHTML = '<p class="loading-text">Error loading entries.</p>'
       return
     }
-
     renderEntries(sessionId, data || [])
   }
 
@@ -124,9 +134,17 @@ window.RangeLogModule = (() => {
       const accuracy = (entry.hits != null && entry.misses != null)
         ? `${entry.hits} hits / ${entry.misses} miss`
         : (entry.hits != null ? `${entry.hits} hits` : '—')
+
+      // Show loadout indicator if weapon came from loadout
+      const weaponDisplay = entry.weapon_used
+        ? (entry.loadout_item_id
+            ? `${Utils.esc(entry.weapon_used)} <span class="loadout-tag">loadout</span>`
+            : Utils.esc(entry.weapon_used))
+        : '—'
+
       return `
         <tr>
-          <td>${Utils.esc(entry.weapon_used || '—')}</td>
+          <td>${weaponDisplay}</td>
           <td>${Utils.esc(entry.caliber || '—')}</td>
           <td>${entry.rounds_fired != null ? entry.rounds_fired : '—'}</td>
           <td>${dist}</td>
@@ -235,13 +253,41 @@ window.RangeLogModule = (() => {
     })
   }
 
+  function buildWeaponPickerHTML() {
+    if (_loadoutWeapons.length === 0) {
+      // No loadout weapons — just show text input
+      return `
+        <input type="text" name="weapon_used" id="ep-weapon-text"
+          class="form-input" placeholder="e.g. BCM AR15, Glock 19" maxlength="100" />
+        <input type="hidden" name="loadout_item_id" value="" />
+      `
+    }
+
+    const weaponOptions = _loadoutWeapons.map(w => {
+      const typeLabel = WEAPON_CATEGORY_LABELS[w.category] || w.category
+      return `<option value="${w.id}" data-name="${Utils.esc(w.name)}">${typeLabel} — ${Utils.esc(w.name)}</option>`
+    }).join('')
+
+    return `
+      <select id="ep-weapon-select" class="form-select">
+        <option value="">— Select from Loadout —</option>
+        ${weaponOptions}
+        <option value="__manual__">✏ Type Manually (Rental / Borrowed)</option>
+      </select>
+      <input type="text" id="ep-weapon-text" name="weapon_used"
+        class="form-input" placeholder="e.g. Rented AR15, borrowed Glock 19" maxlength="100"
+        style="display:none;margin-top:6px;" />
+      <input type="hidden" id="ep-loadout-id" name="loadout_item_id" value="" />
+    `
+  }
+
   function openAddEntryModal(sessionId) {
     Utils.openModal('Add Range Entry', `
       <form id="entry-form">
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">Weapon Used</label>
-            <input type="text" name="weapon_used" class="form-input" placeholder="e.g. BCM AR15, Glock 19" maxlength="100" />
+            <div class="weapon-picker">${buildWeaponPickerHTML()}</div>
           </div>
           <div class="form-group">
             <label class="form-label">Caliber / Ammo Type</label>
@@ -306,14 +352,50 @@ window.RangeLogModule = (() => {
       </form>
     `)
 
+    // Wire up weapon picker if loadout weapons are available
+    const weaponSelect = document.getElementById('ep-weapon-select')
+    if (weaponSelect) {
+      const weaponText = document.getElementById('ep-weapon-text')
+      const loadoutIdInput = document.getElementById('ep-loadout-id')
+
+      weaponSelect.addEventListener('change', () => {
+        const val = weaponSelect.value
+        if (val === '__manual__') {
+          weaponText.style.display = ''
+          weaponText.focus()
+          loadoutIdInput.value = ''
+        } else if (val === '') {
+          weaponText.style.display = 'none'
+          weaponText.value = ''
+          loadoutIdInput.value = ''
+        } else {
+          weaponText.style.display = 'none'
+          weaponText.value = ''
+          loadoutIdInput.value = val
+        }
+      })
+    }
+
     document.getElementById('entry-form').addEventListener('submit', async (e) => {
       e.preventDefault()
       const fd = new FormData(e.target)
       const toInt = v => v ? parseInt(v) : null
       const toNum = v => v ? parseFloat(v) : null
+
+      // Resolve weapon info
+      const loadoutItemId = fd.get('loadout_item_id') || null
+      let weaponUsed = fd.get('weapon_used')?.trim() || null
+
+      // If a loadout weapon was selected, use its name as weapon_used text
+      if (loadoutItemId && !weaponUsed) {
+        const match = _loadoutWeapons.find(w => w.id === loadoutItemId)
+        if (match) weaponUsed = match.name
+      }
+
       const payload = {
         session_id: sessionId,
-        weapon_used: fd.get('weapon_used').trim() || null,
+        weapon_used: weaponUsed,
+        loadout_item_id: loadoutItemId,
         caliber: fd.get('caliber').trim() || null,
         rounds_fired: toInt(fd.get('rounds_fired')),
         distance_value: toNum(fd.get('distance_value')),
@@ -324,6 +406,7 @@ window.RangeLogModule = (() => {
         drill_name: fd.get('drill_name').trim() || null,
         notes: fd.get('notes').trim() || null,
       }
+
       const btn = e.target.querySelector('[type=submit]')
       btn.disabled = true; btn.textContent = 'Saving...'
 

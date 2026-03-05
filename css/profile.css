@@ -122,6 +122,220 @@
   overflow: hidden;
 }
 
+/* ── Weapon Cards (Loadout weapons group) ─────────────────── */
+.weapon-cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-xs) 0 var(--space-sm);
+}
+
+.weapon-card {
+  background-color: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-green);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.weapon-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-md) var(--space-lg);
+  cursor: pointer;
+  transition: background-color var(--transition);
+  gap: var(--space-md);
+}
+
+.weapon-card-header:hover {
+  background-color: var(--color-green-dark);
+}
+
+.weapon-card-info {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.weapon-type-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  background-color: var(--color-green-dark);
+  color: var(--color-green-bright);
+  border-radius: 10px;
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.weapon-card-name {
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  color: var(--color-text-primary);
+  letter-spacing: 0.04em;
+}
+
+.weapon-card-notes {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  font-style: italic;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+.weapon-card-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-shrink: 0;
+}
+
+.weapon-build-count {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--color-text-dim);
+  white-space: nowrap;
+}
+
+.weapon-chevron {
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  transition: transform var(--transition);
+}
+
+.weapon-card-open .weapon-chevron {
+  transform: rotate(180deg);
+}
+
+.weapon-card-build {
+  display: none;
+  border-top: 1px solid var(--color-border);
+  padding: var(--space-md) var(--space-lg);
+}
+
+.weapon-card-open .weapon-card-build {
+  display: block;
+}
+
+/* ── Build Attachment List (shared: card view + modal) ─────── */
+.build-attachment-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.build-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: 6px var(--space-sm);
+  border-radius: var(--radius-sm);
+  background-color: var(--color-bg-panel);
+  border: 1px solid var(--color-border);
+}
+
+.build-item-type {
+  display: inline-block;
+  padding: 1px 7px;
+  background-color: var(--color-bg-elevated);
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.build-item-name {
+  flex: 1;
+  font-size: 0.875rem;
+  color: var(--color-text-primary);
+  min-width: 0;
+}
+
+.build-item-brand {
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+}
+
+.btn-remove-attachment,
+.btn-remove-pending {
+  background: none;
+  border: none;
+  color: var(--color-text-dim);
+  font-size: 0.8rem;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  transition: color var(--transition), background-color var(--transition);
+  flex-shrink: 0;
+}
+
+.btn-remove-attachment:hover,
+.btn-remove-pending:hover {
+  color: var(--color-red);
+  background-color: var(--color-red-dark);
+}
+
+.build-empty {
+  text-align: center;
+  color: var(--color-text-dim);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  padding: var(--space-md) 0;
+  font-style: italic;
+}
+
+/* ── Weapon Builder Section (inside Add Item modal) ─────────── */
+.weapon-builder-section {
+  background-color: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-top: 2px solid var(--color-green);
+  border-radius: var(--radius-sm);
+  padding: var(--space-md) var(--space-lg);
+  margin-top: var(--space-sm);
+}
+
+.weapon-builder-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-md);
+}
+
+.weapon-builder-title {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-green-bright);
+}
+
+.att-inline-form {
+  background-color: var(--color-bg-panel);
+  border: 1px solid var(--color-border-accent);
+  border-radius: var(--radius-sm);
+  padding: var(--space-md);
+  margin-bottom: var(--space-md);
+}
+
+.pending-build-list {
+  min-height: 48px;
+}
+
 /* ── Range Log ────────────────────────────────────────────── */
 .session-card {
   background-color: var(--color-bg-panel);
