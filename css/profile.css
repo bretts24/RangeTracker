@@ -186,10 +186,6 @@
   font-size: 0.75rem;
   color: var(--color-text-muted);
   font-style: italic;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 200px;
 }
 
 .weapon-card-actions {
