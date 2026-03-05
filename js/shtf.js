@@ -47,6 +47,7 @@ window.SHTFModule = (() => {
     const tableMap = {
       food: 'shtf_food', water: 'shtf_water',
       medical: 'shtf_medical', gear: 'shtf_gear', ammo: 'shtf_ammo',
+      seeds: 'shtf_seeds',
     }
     const table = tableMap[type]
     const container = document.getElementById(`shtf-${type}-content`)
@@ -81,6 +82,24 @@ window.SHTFModule = (() => {
           <td class="${expClass}">${item.expiry_date ? Utils.formatDateShort(item.expiry_date) : '—'}</td>
           <td>${Utils.esc(item.notes || '—')}</td>
           <td><button class="btn btn-danger btn-sm shtf-del-btn" data-table="shtf_food" data-id="${item.id}" data-type="food">✕</button></td>
+        </tr>`
+      }
+    } else if (type === 'seeds') {
+      headersHTML = '<th>Seed Name</th><th>Type</th><th>Variety</th><th>Heirloom</th><th>Qty</th><th>Harvest Yr</th><th>Rotate By</th><th>Storage</th><th>Germ %</th><th>Notes</th><th></th>'
+      rowsFn = item => {
+        const rotClass = Utils.getExpiryClass(item.rotate_by_date)
+        return `<tr>
+          <td>${Utils.esc(item.seed_name)}</td>
+          <td>${Utils.esc(item.seed_type || '—')}</td>
+          <td>${Utils.esc(item.variety || '—')}</td>
+          <td>${item.heirloom ? 'Heirloom' : 'Hybrid'}</td>
+          <td>${Utils.esc(item.quantity || '—')}</td>
+          <td>${item.harvest_year || '—'}</td>
+          <td class="${rotClass}">${item.rotate_by_date ? Utils.formatDateShort(item.rotate_by_date) : '—'}</td>
+          <td>${Utils.esc(item.storage_method || '—')}</td>
+          <td>${item.germination_rate != null ? item.germination_rate + '%' : '—'}</td>
+          <td>${Utils.esc(item.notes || '—')}</td>
+          <td><button class="btn btn-danger btn-sm shtf-del-btn" data-table="shtf_seeds" data-id="${item.id}" data-type="seeds">✕</button></td>
         </tr>`
       }
     } else if (type === 'ammo') {
@@ -232,6 +251,7 @@ window.SHTFModule = (() => {
       ammo:     addAmmoForm,
       prepplans: addPrepPlanForm,
       bugout:   addBugoutForm,
+      seeds:    addSeedBankForm,
     }
     const formFn = forms[type]
     if (formFn) formFn()
@@ -444,6 +464,97 @@ window.SHTFModule = (() => {
         destination: fd.get('destination').trim() || null,
         notes: fd.get('notes').trim() || null,
       }, 'bugout', e.target)
+    })
+  }
+
+  function addSeedBankForm() {
+    Utils.openModal('Add to Seed Bank', `
+      <form id="shtf-form">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Seed Name <span style="color:var(--color-red)">*</span></label>
+            <input type="text" name="seed_name" class="form-input" placeholder="e.g. Heirloom Tomato, Black Beans" required maxlength="120" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Type</label>
+            <select name="seed_type" class="form-select">
+              <option value="">— Select —</option>
+              <option value="Vegetable">Vegetable</option>
+              <option value="Fruit">Fruit</option>
+              <option value="Herb">Herb</option>
+              <option value="Grain">Grain</option>
+              <option value="Legume">Legume</option>
+              <option value="Flower">Flower</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Variety</label>
+            <input type="text" name="variety" class="form-input" placeholder="e.g. Roma, Cherokee Purple" maxlength="100" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Heirloom / Hybrid</label>
+            <select name="heirloom" class="form-select">
+              <option value="true">Heirloom</option>
+              <option value="false">Hybrid</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Quantity</label>
+            <input type="text" name="quantity" class="form-input" placeholder="e.g. 500 seeds, 3 packets" maxlength="60" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Harvest / Pack Year</label>
+            <input type="number" name="harvest_year" class="form-input" placeholder="${new Date().getFullYear()}" min="2000" max="2100" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Rotate By Date</label>
+            <input type="date" name="rotate_by_date" class="form-input" />
+            <small style="color:var(--color-text-muted);font-size:0.7rem;">When seeds should be swapped out for fresh stock</small>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Germination Rate %</label>
+            <input type="number" name="germination_rate" class="form-input" placeholder="e.g. 85" min="0" max="100" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Storage Method</label>
+          <input type="text" name="storage_method" class="form-input" placeholder="e.g. Vacuum sealed, cool/dark, mylar bag, freezer" maxlength="120" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Notes</label>
+          <textarea name="notes" class="form-textarea" placeholder="Growing notes, planting depth, days to maturity, location, etc."></textarea>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="Utils.closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Add Seeds</button>
+        </div>
+      </form>
+    `)
+    document.getElementById('shtf-form').addEventListener('submit', async (e) => {
+      e.preventDefault()
+      const fd = new FormData(e.target)
+      const harvestYr = fd.get('harvest_year')
+      const germRate  = fd.get('germination_rate')
+      await saveItem('shtf_seeds', {
+        user_id:          _userId,
+        seed_name:        fd.get('seed_name').trim(),
+        seed_type:        fd.get('seed_type') || null,
+        variety:          fd.get('variety').trim() || null,
+        heirloom:         fd.get('heirloom') === 'true',
+        quantity:         fd.get('quantity').trim() || null,
+        harvest_year:     harvestYr ? parseInt(harvestYr) : null,
+        rotate_by_date:   fd.get('rotate_by_date') || null,
+        germination_rate: germRate ? parseInt(germRate) : null,
+        storage_method:   fd.get('storage_method').trim() || null,
+        notes:            fd.get('notes').trim() || null,
+      }, 'seeds', e.target)
     })
   }
 
