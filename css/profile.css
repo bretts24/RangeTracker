@@ -407,6 +407,94 @@
   color: var(--color-text-muted);
 }
 
+/* ── Range Entry Cards ─────────────────────────────────────── */
+.entry-cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-sm) 0;
+}
+
+.entry-card {
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-amber);
+  border-radius: var(--radius-sm);
+  padding: var(--space-sm) var(--space-md);
+}
+
+.entry-card-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.entry-weapon-badge {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  padding: 2px 8px;
+  background: var(--color-bg-panel);
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+}
+
+.entry-weapon-badge.entry-weapon-loadout {
+  border-color: var(--color-green);
+  color: var(--color-green-bright);
+}
+
+.entry-detail-chip {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  padding: 2px 6px;
+  background: var(--color-bg-panel);
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+.entry-card-detail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+  margin-top: var(--space-xs);
+  padding-top: var(--space-xs);
+  border-top: 1px solid var(--color-border);
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+}
+
+.entry-card-notes {
+  width: 100%;
+  font-style: italic;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  margin-top: 2px;
+}
+
+/* ── Inline Entry Form ──────────────────────────────────────── */
+.entry-inline-form {
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-top: 2px solid var(--color-green);
+  border-radius: var(--radius-sm);
+  padding: var(--space-md) var(--space-lg);
+  margin-top: var(--space-md);
+}
+
+.entry-form-title {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-green-bright);
+  margin-bottom: var(--space-md);
+}
+
 /* ── SHTF Sub-tabs ────────────────────────────────────────── */
 .shtf-tabs {
   display: flex;

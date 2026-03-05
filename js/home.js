@@ -2,12 +2,6 @@
 ;(async function () {
   const grid = document.getElementById('user-tile-grid')
 
-  const ICONS = ['🎯', '🔫', '🪖', '⚔️', '🛡️', '🔰']
-
-  function iconFor(index) {
-    return ICONS[index % ICONS.length]
-  }
-
   async function loadUsers() {
     const { data: users, error } = await window.sb
       .from('users')
@@ -25,9 +19,8 @@
       return
     }
 
-    grid.innerHTML = users.map((user, i) => `
+    grid.innerHTML = users.map((user) => `
       <a href="/profile.html?userId=${user.id}" class="tile">
-        <span class="tile-icon">${iconFor(i)}</span>
         <span class="tile-name">${Utils.esc(user.name)}</span>
         <span class="tile-meta">Operator Profile</span>
       </a>

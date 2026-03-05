@@ -2,6 +2,8 @@
 window.LoadoutModule = (() => {
   let _userId = null
   let _initialized = false
+  let _items = []
+  let _attachMap = {}
 
   const WEAPON_CATEGORIES = ['rifle', 'pistol', 'shotgun', 'smg', 'pcc', 'other_weapon']
 
@@ -78,6 +80,8 @@ window.LoadoutModule = (() => {
       attachMap[a.weapon_id].push(a)
     })
 
+    _items = items
+    _attachMap = attachMap
     renderAll(items, attachMap)
   }
 
@@ -97,6 +101,7 @@ window.LoadoutModule = (() => {
 
     container.innerHTML = html
     bindDeleteButtons()
+    bindEditButtons()
     bindGroupToggles()
     bindWeaponCardToggles()
     bindRemoveAttachmentButtons()
@@ -148,7 +153,8 @@ window.LoadoutModule = (() => {
           <div class="weapon-card-actions">
             <span class="weapon-build-count">${attCount} part${attCount !== 1 ? 's' : ''}</span>
             <button class="btn btn-primary btn-sm add-weapon-att-btn" data-weapon-id="${weapon.id}">+ Part</button>
-            <button class="btn btn-danger delete-loadout-btn" data-id="${weapon.id}">Remove</button>
+            <button class="btn btn-secondary btn-sm edit-loadout-btn" data-id="${weapon.id}">Edit</button>
+            <button class="btn btn-danger btn-sm delete-loadout-btn" data-id="${weapon.id}">Remove</button>
             <span class="weapon-chevron">▼</span>
           </div>
         </div>
@@ -170,7 +176,10 @@ window.LoadoutModule = (() => {
             <td>${Utils.esc(item.brand || '—')}</td>
             <td>${Utils.esc(item.notes || '—')}</td>
             <td>${Utils.formatDate(item.created_at)}</td>
-            <td><button class="btn btn-danger delete-loadout-btn" data-id="${item.id}">Remove</button></td>
+            <td style="white-space:nowrap;">
+              <button class="btn btn-secondary btn-sm edit-loadout-btn" data-id="${item.id}" style="margin-right:4px;">Edit</button>
+              <button class="btn btn-danger btn-sm delete-loadout-btn" data-id="${item.id}">Remove</button>
+            </td>
           </tr>
         `).join('')
 
@@ -229,6 +238,202 @@ window.LoadoutModule = (() => {
   function bindDeleteButtons() {
     document.querySelectorAll('.delete-loadout-btn').forEach(btn => {
       btn.addEventListener('click', () => deleteItem(btn.dataset.id))
+    })
+  }
+
+  function bindEditButtons() {
+    document.querySelectorAll('.edit-loadout-btn').forEach(btn => {
+      btn.addEventListener('click', () => openEditModal(btn.dataset.id))
+    })
+  }
+
+  async function openEditModal(itemId) {
+    const item = _items.find(i => i.id === itemId)
+    if (!item) return
+
+    const isWeapon = WEAPON_CATEGORIES.includes(item.category)
+    let pendingAtts = isWeapon
+      ? (_attachMap[itemId] || []).map(a => ({
+          type: a.attachment_type, name: a.name,
+          brand: a.brand || '', tempId: a.id,
+        }))
+      : []
+
+    Utils.openModal('Edit Loadout Item', `
+      <form id="edit-loadout-form" autocomplete="off">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Category <span style="color:var(--color-red)">*</span></label>
+            <select name="category" id="elf-category" class="form-select" required>
+              ${buildCategoryOptions()}
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Name / Model <span style="color:var(--color-red)">*</span></label>
+            <input type="text" name="name" class="form-input" value="${Utils.esc(item.name)}" required maxlength="100" />
+          </div>
+        </div>
+
+        <div id="elf-nonweapon">
+          <div class="form-group">
+            <label class="form-label">Brand / Manufacturer</label>
+            <input type="text" name="brand" class="form-input" value="${Utils.esc(item.brand || '')}" maxlength="80" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Notes</label>
+            <textarea name="notes" class="form-textarea">${Utils.esc(item.notes || '')}</textarea>
+          </div>
+        </div>
+
+        <div id="elf-weapon-builder" style="display:none;">
+          <div class="form-group">
+            <label class="form-label">Notes / Config</label>
+            <textarea name="weapon_notes" class="form-textarea">${Utils.esc(item.notes || '')}</textarea>
+          </div>
+          <div class="weapon-builder-section">
+            <div class="weapon-builder-header">
+              <span class="weapon-builder-title">🔧 Build Parts</span>
+              <button type="button" class="btn btn-primary btn-sm" id="elf-toggle-att">+ Add Attachment</button>
+            </div>
+            <div id="elf-att-inline" class="att-inline-form" style="display:none;">
+              <div class="form-row-3">
+                <div class="form-group" style="margin-bottom:0;">
+                  <label class="form-label">Type</label>
+                  <select id="elf-att-type" class="form-select">${attTypeOptionsHTML()}</select>
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                  <label class="form-label">Name / Model <span style="color:var(--color-red)">*</span></label>
+                  <input type="text" id="elf-att-name" class="form-input" placeholder="e.g. Holosun ARO" maxlength="100" />
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                  <label class="form-label">Brand</label>
+                  <input type="text" id="elf-att-brand" class="form-input" placeholder="e.g. Holosun" maxlength="80" />
+                </div>
+              </div>
+              <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px;">
+                <button type="button" class="btn btn-secondary btn-sm" id="elf-att-cancel">Cancel</button>
+                <button type="button" class="btn btn-primary btn-sm" id="elf-att-confirm">Add to Build</button>
+              </div>
+            </div>
+            <div id="elf-pending-build" class="pending-build-list"></div>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="Utils.closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="elf-submit">Save Changes</button>
+        </div>
+      </form>
+    `)
+
+    const modalEl         = document.querySelector('.modal')
+    const categorySelect  = document.getElementById('elf-category')
+    const nonWeaponSection    = document.getElementById('elf-nonweapon')
+    const weaponBuilderSection = document.getElementById('elf-weapon-builder')
+
+    categorySelect.value = item.category
+
+    function updateMode() {
+      const isW = WEAPON_CATEGORIES.includes(categorySelect.value)
+      nonWeaponSection.style.display    = isW ? 'none' : ''
+      weaponBuilderSection.style.display = isW ? '' : 'none'
+      if (modalEl) modalEl.style.maxWidth = isW ? '720px' : '580px'
+    }
+
+    categorySelect.addEventListener('change', updateMode)
+    updateMode()
+
+    function renderPendingBuild(atts) {
+      const container = document.getElementById('elf-pending-build')
+      if (atts.length === 0) {
+        container.innerHTML = '<p class="build-empty">No attachments yet — hit "+ Add Attachment" to start building your weapon.</p>'
+        return
+      }
+      const typeLabel = (val) => ATTACHMENT_TYPES.find(t => t.value === val)?.label || val
+      container.innerHTML = `
+        <div class="build-attachment-list">
+          ${atts.map(a => `
+            <div class="build-item">
+              <span class="build-item-type">${Utils.esc(typeLabel(a.type))}</span>
+              <span class="build-item-name">${Utils.esc(a.name)}${a.brand ? ` <span class="build-item-brand">· ${Utils.esc(a.brand)}</span>` : ''}</span>
+              <button class="btn-remove-pending" data-temp-id="${a.tempId}" type="button">✕</button>
+            </div>
+          `).join('')}
+        </div>
+      `
+      container.querySelectorAll('.btn-remove-pending').forEach(btn => {
+        btn.addEventListener('click', () => {
+          pendingAtts = pendingAtts.filter(a => String(a.tempId) !== String(btn.dataset.tempId))
+          renderPendingBuild(pendingAtts)
+        })
+      })
+    }
+
+    renderPendingBuild(pendingAtts)
+
+    document.getElementById('elf-toggle-att').addEventListener('click', () => {
+      const form = document.getElementById('elf-att-inline')
+      const showing = form.style.display !== 'none'
+      form.style.display = showing ? 'none' : ''
+      if (!showing) document.getElementById('elf-att-name').focus()
+    })
+
+    document.getElementById('elf-att-cancel').addEventListener('click', () => {
+      document.getElementById('elf-att-inline').style.display = 'none'
+    })
+
+    document.getElementById('elf-att-confirm').addEventListener('click', () => {
+      const type  = document.getElementById('elf-att-type').value
+      const name  = document.getElementById('elf-att-name').value.trim()
+      const brand = document.getElementById('elf-att-brand').value.trim()
+      if (!name) { document.getElementById('elf-att-name').focus(); return }
+      pendingAtts.push({ type, name, brand, tempId: Date.now() + Math.random() })
+      document.getElementById('elf-att-name').value  = ''
+      document.getElementById('elf-att-brand').value = ''
+      document.getElementById('elf-att-inline').style.display = 'none'
+      renderPendingBuild(pendingAtts)
+    })
+
+    document.getElementById('edit-loadout-form').addEventListener('submit', async (e) => {
+      e.preventDefault()
+      const fd  = new FormData(e.target)
+      const isW = WEAPON_CATEGORIES.includes(fd.get('category'))
+      const btn = document.getElementById('elf-submit')
+      btn.disabled = true; btn.textContent = 'Saving...'
+
+      const { error } = await window.sb
+        .from('loadout_items')
+        .update({
+          category: fd.get('category'),
+          name:     fd.get('name').trim(),
+          brand:    isW ? null : (fd.get('brand')?.trim() || null),
+          notes:    isW ? (fd.get('weapon_notes')?.trim() || null) : (fd.get('notes')?.trim() || null),
+        })
+        .eq('id', itemId)
+
+      if (error) {
+        Utils.showToast('Save failed: ' + error.message, 'error')
+        btn.disabled = false; btn.textContent = 'Save Changes'
+        return
+      }
+
+      if (isW) {
+        // Replace all attachments: delete existing, re-insert all in pendingAtts
+        await window.sb.from('weapon_attachments').delete().eq('weapon_id', itemId)
+        if (pendingAtts.length > 0) {
+          const { error: attErr } = await window.sb.from('weapon_attachments').insert(
+            pendingAtts.map(a => ({
+              weapon_id: itemId, user_id: _userId,
+              attachment_type: a.type, name: a.name, brand: a.brand || null,
+            }))
+          )
+          if (attErr) Utils.showToast('Saved but some parts failed: ' + attErr.message, 'error')
+        }
+      }
+
+      Utils.closeModal()
+      Utils.showToast('Loadout item updated!')
+      await loadAll()
     })
   }
 
