@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Knowledge Center — LastStandLog</title>
+  <link rel="stylesheet" href="/css/reset.css" />
+  <link rel="stylesheet" href="/css/theme.css" />
+  <link rel="stylesheet" href="/css/layout.css" />
+  <link rel="stylesheet" href="/css/components.css" />
+  <link rel="stylesheet" href="/css/knowledge.css" />
+</head>
+<body>
+
+  <header class="site-header">
+    <a href="/index.html" class="back-btn" title="Back to home">&#8592;</a>
+    <div class="header-brand">
+      <span class="site-title">Knowledge Center</span>
+      <span class="site-subtitle">LastStandLog — Resources &amp; References</span>
+    </div>
+  </header>
+
+  <main class="main-content">
+
+    <div class="toolbar" style="margin-bottom: var(--space-lg);">
+      <div class="kc-filters" id="kc-filters">
+        <button class="kc-filter-btn active" data-cat="all">All</button>
+        <button class="kc-filter-btn" data-cat="video">Videos</button>
+        <button class="kc-filter-btn" data-cat="book">Books</button>
+        <button class="kc-filter-btn" data-cat="article">Articles</button>
+        <button class="kc-filter-btn" data-cat="gear_rec">Gear Recs</button>
+        <button class="kc-filter-btn" data-cat="prep_plan">Prep Plans</button>
+        <button class="kc-filter-btn" data-cat="tactics_training">Tactics &amp; Training</button>
+        <button class="kc-filter-btn" data-cat="general_note">Notes</button>
+      </div>
+      <button class="btn btn-primary" id="kc-add-btn" style="flex-shrink:0;">+ Add Resource</button>
+    </div>
+
+    <div class="kc-grid" id="kc-grid">
+      <p class="kc-empty">Loading resources...</p>
+    </div>
+
+  </main>
+
+  <!-- Shared Modal -->
+  <div id="modal-overlay" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <span class="modal-title" id="modal-title">Add Resource</span>
+        <button class="modal-close" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body" id="modal-body"></div>
+    </div>
+  </div>
+
+  <div id="toast-container"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="/js/supabase-client.js"></script>
+  <script src="/js/utils.js"></script>
+  <script src="/js/knowledge.js"></script>
+</body>
+</html>

@@ -1,0 +1,49 @@
+:root {
+  /* Backgrounds */
+  --color-bg-deep:     #0a0c0e;
+  --color-bg-panel:    #12161a;
+  --color-bg-elevated: #1a2025;
+  --color-bg-input:    #0d1114;
+
+  /* Borders */
+  --color-border:        #2a3540;
+  --color-border-accent: #3a5040;
+
+  /* Text */
+  --color-text-primary: #d4cfc8;
+  --color-text-muted:   #7a8a80;
+  --color-text-dim:     #4a5a50;
+
+  /* Accent Colors */
+  --color-green:        #4a7c59;
+  --color-green-bright: #6aad7a;
+  --color-green-dark:   #2e4d38;
+  --color-amber:        #c49a3c;
+  --color-amber-dark:   #7a5f20;
+  --color-red:          #8b3a3a;
+  --color-red-dark:     #5c2525;
+  --color-blue:         #2a4a6a;
+
+  /* Typography */
+  --font-mono:   'Courier New', Courier, monospace;
+  --font-body:   'Segoe UI', system-ui, -apple-system, sans-serif;
+
+  /* Spacing */
+  --space-xs:  0.25rem;
+  --space-sm:  0.5rem;
+  --space-md:  1rem;
+  --space-lg:  1.5rem;
+  --space-xl:  2rem;
+  --space-2xl: 3rem;
+
+  /* Radius */
+  --radius-sm: 3px;
+  --radius-md: 6px;
+
+  /* Shadows */
+  --shadow-panel: 0 2px 12px rgba(0, 0, 0, 0.6);
+  --shadow-modal: 0 8px 32px rgba(0, 0, 0, 0.8);
+
+  /* Transitions */
+  --transition: 150ms ease;
+}

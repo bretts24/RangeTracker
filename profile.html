@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Operator Profile — LastStandLog</title>
+  <link rel="stylesheet" href="/css/reset.css" />
+  <link rel="stylesheet" href="/css/theme.css" />
+  <link rel="stylesheet" href="/css/layout.css" />
+  <link rel="stylesheet" href="/css/components.css" />
+  <link rel="stylesheet" href="/css/profile.css" />
+</head>
+<body>
+
+  <header class="site-header">
+    <a href="/index.html" class="back-btn" title="Back to home">&#8592;</a>
+    <div class="header-brand">
+      <span class="site-title">LastStandLog</span>
+    </div>
+  </header>
+
+  <!-- Profile identity bar -->
+  <div class="profile-header">
+    <div class="profile-avatar" id="profile-avatar">?</div>
+    <div class="profile-info">
+      <div class="profile-label">Operator</div>
+      <div class="profile-name" id="profile-name">Loading...</div>
+    </div>
+  </div>
+
+  <!-- Section tabs -->
+  <nav class="profile-tabs">
+    <button class="tab-btn" data-tab="loadout">Loadout</button>
+    <button class="tab-btn" data-tab="rangelog">Range Log</button>
+    <button class="tab-btn" data-tab="shtf">SHTF Tracker</button>
+  </nav>
+
+  <main class="main-content">
+
+    <!-- ── LOADOUT TAB ─────────────────────────────────────── -->
+    <section id="tab-loadout" class="tab-section">
+      <div class="toolbar">
+        <span class="toolbar-title">Loadout</span>
+        <button class="btn btn-primary" id="loadout-add-btn">+ Add Item</button>
+      </div>
+      <div id="loadout-content">
+        <p class="loading-text">Loading loadout...</p>
+      </div>
+    </section>
+
+    <!-- ── RANGE LOG TAB ───────────────────────────────────── -->
+    <section id="tab-rangelog" class="tab-section">
+      <div class="toolbar">
+        <span class="toolbar-title">Range Log</span>
+        <button class="btn btn-primary" id="rangelog-add-btn">+ New Session</button>
+      </div>
+      <div id="rangelog-content">
+        <p class="loading-text">Loading range log...</p>
+      </div>
+    </section>
+
+    <!-- ── SHTF TRACKER TAB ────────────────────────────────── -->
+    <section id="tab-shtf" class="tab-section">
+      <div class="toolbar">
+        <span class="toolbar-title">SHTF Tracker</span>
+      </div>
+
+      <nav class="shtf-tabs">
+        <button class="shtf-tab-btn" data-shtf="food">Food</button>
+        <button class="shtf-tab-btn" data-shtf="water">Water</button>
+        <button class="shtf-tab-btn" data-shtf="medical">Medical</button>
+        <button class="shtf-tab-btn" data-shtf="gear">Gear</button>
+        <button class="shtf-tab-btn" data-shtf="ammo">Ammo</button>
+        <button class="shtf-tab-btn" data-shtf="prepplans">Prep Plans</button>
+        <button class="shtf-tab-btn" data-shtf="bugout">Bug-Out Plans</button>
+      </nav>
+
+      <div id="shtf-food"     class="shtf-subsection">
+        <div class="toolbar"><span></span><button class="btn btn-primary shtf-add-btn" data-type="food">+ Add Food</button></div>
+        <div id="shtf-food-content"><p class="loading-text">Loading...</p></div>
+      </div>
+      <div id="shtf-water"    class="shtf-subsection">
+        <div class="toolbar"><span></span><button class="btn btn-primary shtf-add-btn" data-type="water">+ Add Water</button></div>
+        <div id="shtf-water-content"><p class="loading-text">Loading...</p></div>
+      </div>
+      <div id="shtf-medical"  class="shtf-subsection">
+        <div class="toolbar"><span></span><button class="btn btn-primary shtf-add-btn" data-type="medical">+ Add Medical</button></div>
+        <div id="shtf-medical-content"><p class="loading-text">Loading...</p></div>
+      </div>
+      <div id="shtf-gear"     class="shtf-subsection">
+        <div class="toolbar"><span></span><button class="btn btn-primary shtf-add-btn" data-type="gear">+ Add Gear</button></div>
+        <div id="shtf-gear-content"><p class="loading-text">Loading...</p></div>
+      </div>
+      <div id="shtf-ammo"     class="shtf-subsection">
+        <div class="toolbar"><span></span><button class="btn btn-primary shtf-add-btn" data-type="ammo">+ Add Ammo</button></div>
+        <div id="shtf-ammo-content"><p class="loading-text">Loading...</p></div>
+      </div>
+      <div id="shtf-prepplans" class="shtf-subsection">
+        <div class="toolbar"><span></span><button class="btn btn-primary shtf-add-btn" data-type="prepplans">+ Add Plan</button></div>
+        <div id="shtf-prepplans-content"><p class="loading-text">Loading...</p></div>
+      </div>
+      <div id="shtf-bugout"   class="shtf-subsection">
+        <div class="toolbar"><span></span><button class="btn btn-primary shtf-add-btn" data-type="bugout">+ Add Bug-Out Plan</button></div>
+        <div id="shtf-bugout-content"><p class="loading-text">Loading...</p></div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Shared Modal -->
+  <div id="modal-overlay" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <span class="modal-title" id="modal-title">Add Item</span>
+        <button class="modal-close" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body" id="modal-body"></div>
+    </div>
+  </div>
+
+  <div id="toast-container"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="/js/supabase-client.js"></script>
+  <script src="/js/utils.js"></script>
+  <script src="/js/loadout.js"></script>
+  <script src="/js/range-log.js"></script>
+  <script src="/js/shtf.js"></script>
+  <script src="/js/profile.js"></script>
+</body>
+</html>

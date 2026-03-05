@@ -1,0 +1,150 @@
+/* ── Knowledge Center Category Filters ────────────────────── */
+.kc-filters {
+  display: flex;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-lg);
+}
+
+.kc-filter-btn {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: var(--space-xs) var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  background: none;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.kc-filter-btn:hover {
+  border-color: var(--color-amber);
+  color: var(--color-amber);
+}
+
+.kc-filter-btn.active {
+  background-color: var(--color-amber-dark);
+  border-color: var(--color-amber);
+  color: var(--color-amber);
+  font-weight: 700;
+}
+
+/* ── Knowledge Items Grid ─────────────────────────────────── */
+.kc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--space-md);
+}
+
+/* ── Knowledge Item Card ──────────────────────────────────── */
+.kc-item {
+  background-color: var(--color-bg-panel);
+  border: 1px solid var(--color-border);
+  border-top: 3px solid var(--color-amber-dark);
+  border-radius: var(--radius-md);
+  padding: var(--space-md) var(--space-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  box-shadow: var(--shadow-panel);
+  transition: border-top-color var(--transition), transform var(--transition);
+}
+
+.kc-item:hover {
+  border-top-color: var(--color-amber);
+  transform: translateY(-1px);
+}
+
+.kc-item-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-sm);
+}
+
+.kc-item-title {
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  letter-spacing: 0.04em;
+  color: var(--color-text-primary);
+  line-height: 1.3;
+}
+
+.kc-item-title a {
+  color: var(--color-amber);
+  transition: color var(--transition);
+}
+
+.kc-item-title a:hover {
+  color: #e8b850;
+}
+
+.kc-item-desc {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+}
+
+.kc-item-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  margin-top: auto;
+  padding-top: var(--space-sm);
+  border-top: 1px solid var(--color-border);
+}
+
+.kc-item-meta {
+  font-size: 0.7rem;
+  color: var(--color-text-dim);
+  font-family: var(--font-mono);
+}
+
+.kc-tags {
+  display: flex;
+  gap: var(--space-xs);
+  flex-wrap: wrap;
+}
+
+.kc-tag {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  background-color: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: 20px;
+  color: var(--color-text-muted);
+}
+
+/* ── Category Badge Colors for KC ────────────────────────── */
+.kc-cat-video           { border-top-color: #4a6a8b; }
+.kc-cat-book            { border-top-color: var(--color-green); }
+.kc-cat-article         { border-top-color: var(--color-text-muted); }
+.kc-cat-gear_rec        { border-top-color: var(--color-amber); }
+.kc-cat-prep_plan       { border-top-color: var(--color-red); }
+.kc-cat-tactics_training { border-top-color: var(--color-green-bright); }
+.kc-cat-general_note    { border-top-color: var(--color-text-dim); }
+
+/* ── Empty state ──────────────────────────────────────────── */
+.kc-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: var(--space-2xl);
+  color: var(--color-text-dim);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+}
+
+@media (max-width: 600px) {
+  .kc-grid {
+    grid-template-columns: 1fr;
+  }
+}

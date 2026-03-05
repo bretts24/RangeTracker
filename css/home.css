@@ -1,0 +1,130 @@
+/* ── Home Hero ────────────────────────────────────────────── */
+.home-hero {
+  text-align: center;
+  padding: var(--space-2xl) 0 var(--space-xl);
+}
+
+.home-hero-title {
+  font-family: var(--font-mono);
+  font-size: clamp(2rem, 5vw, 3.5rem);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--color-green-bright);
+  margin-bottom: var(--space-sm);
+}
+
+.home-hero-sub {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+/* ── Tile Grid ────────────────────────────────────────────── */
+.tile-section-label {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-text-dim);
+  margin-bottom: var(--space-md);
+  margin-top: var(--space-xl);
+}
+
+.tile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-md);
+}
+
+/* ── Individual Tile ──────────────────────────────────────── */
+.tile {
+  background-color: var(--color-bg-panel);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-xl);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-md);
+  cursor: pointer;
+  transition: border-color var(--transition), background-color var(--transition), transform var(--transition);
+  text-decoration: none;
+  color: var(--color-text-primary);
+  box-shadow: var(--shadow-panel);
+  border-left: 3px solid var(--color-green);
+}
+
+.tile:hover {
+  border-color: var(--color-green);
+  background-color: var(--color-bg-elevated);
+  transform: translateY(-2px);
+}
+
+.tile-icon {
+  font-size: 2.5rem;
+  line-height: 1;
+}
+
+.tile-name {
+  font-family: var(--font-mono);
+  font-size: 1.1rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-text-primary);
+}
+
+.tile-meta {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+/* ── Special Tiles ────────────────────────────────────────── */
+.tile--add {
+  border-left-color: var(--color-text-dim);
+  border-style: dashed;
+}
+
+.tile--add:hover {
+  border-left-color: var(--color-green);
+  border-style: solid;
+}
+
+.tile--add .tile-name {
+  color: var(--color-text-muted);
+}
+
+.tile--kc {
+  border-left-color: var(--color-amber);
+}
+
+.tile--kc .tile-name {
+  color: var(--color-amber);
+}
+
+.tile--kc:hover {
+  border-color: var(--color-amber);
+}
+
+/* ── Divider ──────────────────────────────────────────────── */
+.tile-divider {
+  grid-column: 1 / -1;
+  height: 1px;
+  background-color: var(--color-border);
+  margin: var(--space-sm) 0;
+}
+
+@media (max-width: 500px) {
+  .tile-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .tile {
+    padding: var(--space-md);
+  }
+
+  .tile-icon {
+    font-size: 2rem;
+  }
+}

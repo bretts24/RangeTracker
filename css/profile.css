@@ -1,0 +1,296 @@
+/* ── Profile Header ───────────────────────────────────────── */
+.profile-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-lg) var(--space-xl);
+  background-color: var(--color-bg-panel);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.profile-avatar {
+  width: 48px;
+  height: 48px;
+  background-color: var(--color-green-dark);
+  border: 2px solid var(--color-green);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--color-green-bright);
+  flex-shrink: 0;
+}
+
+.profile-info {
+  flex: 1;
+}
+
+.profile-name {
+  font-family: var(--font-mono);
+  font-size: 1.3rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-text-primary);
+}
+
+.profile-label {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+/* ── Profile Tabs ─────────────────────────────────────────── */
+.profile-tabs {
+  background-color: var(--color-bg-panel);
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  gap: 0;
+  padding: 0 var(--space-xl);
+  overflow-x: auto;
+}
+
+.tab-btn {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  padding: var(--space-md) var(--space-lg);
+  border-bottom: 3px solid transparent;
+  transition: color var(--transition), border-color var(--transition);
+  white-space: nowrap;
+  cursor: pointer;
+  background: none;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+}
+
+.tab-btn:hover {
+  color: var(--color-text-primary);
+}
+
+.tab-btn.active {
+  color: var(--color-green-bright);
+  border-bottom-color: var(--color-green-bright);
+}
+
+/* ── Tab Sections ─────────────────────────────────────────── */
+.tab-section {
+  display: none;
+}
+
+.tab-section.active {
+  display: block;
+}
+
+/* ── Loadout Groups ───────────────────────────────────────── */
+.loadout-group {
+  margin-bottom: var(--space-xl);
+}
+
+.loadout-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-sm) 0;
+  margin-bottom: var(--space-sm);
+  border-bottom: 1px solid var(--color-border-accent);
+  cursor: pointer;
+}
+
+.loadout-group-title {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-green-bright);
+}
+
+.loadout-group-count {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--color-text-dim);
+}
+
+.loadout-group-body {
+  overflow: hidden;
+}
+
+/* ── Range Log ────────────────────────────────────────────── */
+.session-card {
+  background-color: var(--color-bg-panel);
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-green);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-md);
+  box-shadow: var(--shadow-panel);
+}
+
+.session-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-md) var(--space-lg);
+  cursor: pointer;
+  transition: background-color var(--transition);
+}
+
+.session-header:hover {
+  background-color: var(--color-bg-elevated);
+}
+
+.session-title {
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  letter-spacing: 0.05em;
+  color: var(--color-text-primary);
+}
+
+.session-meta {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  margin-top: 2px;
+}
+
+.session-chevron {
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  transition: transform var(--transition);
+}
+
+.session-card.expanded .session-chevron {
+  transform: rotate(180deg);
+}
+
+.session-body {
+  display: none;
+  padding: 0 var(--space-lg) var(--space-md);
+  border-top: 1px solid var(--color-border);
+}
+
+.session-card.expanded .session-body {
+  display: block;
+}
+
+.session-entries-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: var(--space-md) 0 var(--space-sm);
+}
+
+.session-entries-label {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+/* ── SHTF Sub-tabs ────────────────────────────────────────── */
+.shtf-tabs {
+  display: flex;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-lg);
+  flex-wrap: wrap;
+}
+
+.shtf-tab-btn {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: var(--space-xs) var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  background: none;
+  transition: all var(--transition);
+  cursor: pointer;
+}
+
+.shtf-tab-btn:hover {
+  border-color: var(--color-green);
+  color: var(--color-green-bright);
+}
+
+.shtf-tab-btn.active {
+  background-color: var(--color-green);
+  border-color: var(--color-green);
+  color: #0a0c0e;
+  font-weight: 700;
+}
+
+.shtf-subsection {
+  display: none;
+}
+
+.shtf-subsection.active {
+  display: block;
+}
+
+/* ── Prep Plan Cards ──────────────────────────────────────── */
+.plan-card {
+  background-color: var(--color-bg-panel);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-md) var(--space-lg);
+  margin-bottom: var(--space-sm);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.plan-card[data-priority="critical"] { border-left: 3px solid var(--color-red); }
+.plan-card[data-priority="high"]     { border-left: 3px solid var(--color-amber); }
+.plan-card[data-priority="medium"]   { border-left: 3px solid var(--color-green); }
+.plan-card[data-priority="low"]      { border-left: 3px solid var(--color-border); }
+
+.plan-card-title {
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  color: var(--color-text-primary);
+  margin-bottom: var(--space-xs);
+}
+
+.plan-card-desc {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.plan-card-badges {
+  display: flex;
+  gap: var(--space-xs);
+  flex-shrink: 0;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.plan-card-actions {
+  display: flex;
+  gap: var(--space-xs);
+  align-items: center;
+  margin-top: var(--space-xs);
+}
+
+@media (max-width: 600px) {
+  .profile-tabs {
+    padding: 0 var(--space-md);
+  }
+
+  .tab-btn {
+    padding: var(--space-sm) var(--space-md);
+    font-size: 0.7rem;
+  }
+
+  .shtf-tabs {
+    gap: var(--space-xs);
+  }
+}

@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LastStandLog</title>
+  <link rel="stylesheet" href="/css/reset.css" />
+  <link rel="stylesheet" href="/css/theme.css" />
+  <link rel="stylesheet" href="/css/layout.css" />
+  <link rel="stylesheet" href="/css/components.css" />
+  <link rel="stylesheet" href="/css/home.css" />
+</head>
+<body>
+
+  <header class="site-header">
+    <div class="header-brand">
+      <span class="site-title">LastStandLog</span>
+      <span class="site-subtitle">Range &amp; Preparedness Tracker</span>
+    </div>
+  </header>
+
+  <main class="main-content">
+    <section class="home-hero">
+      <h1 class="home-hero-title">LastStandLog</h1>
+      <p class="home-hero-sub">Select an operator or section to continue</p>
+    </section>
+
+    <p class="tile-section-label">Operators</p>
+    <div class="tile-grid" id="user-tile-grid">
+      <div class="loading-text">Loading operators...</div>
+    </div>
+
+    <p class="tile-section-label" style="margin-top: var(--space-xl);">Actions</p>
+    <div class="tile-grid">
+      <a href="/add-user.html" class="tile tile--add">
+        <span class="tile-icon">＋</span>
+        <span class="tile-name">Add Operator</span>
+        <span class="tile-meta">Create a new profile</span>
+      </a>
+      <a href="/knowledge-center.html" class="tile tile--kc">
+        <span class="tile-icon">📚</span>
+        <span class="tile-name">Knowledge Center</span>
+        <span class="tile-meta">Resources &amp; references</span>
+      </a>
+    </div>
+  </main>
+
+  <div id="toast-container"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="/js/supabase-client.js"></script>
+  <script src="/js/utils.js"></script>
+  <script src="/js/home.js"></script>
+</body>
+</html>
