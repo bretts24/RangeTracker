@@ -17,8 +17,8 @@
     .single()
 
   if (error || !user) {
-    Utils.showToast('Operator not found: ' + (error ? error.message + ' [' + error.code + ']' : 'no user'), 'error')
-    setTimeout(() => { window.location.href = '/index.html' }, 4000)
+    Utils.showToast('Operator not found.', 'error')
+    setTimeout(() => { window.location.href = '/index.html' }, 1500)
     return
   }
 
