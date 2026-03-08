@@ -4,6 +4,7 @@ window.LoadoutModule = (() => {
   let _initialized = false
   let _items = []
   let _attachMap = {}
+  let _searchQuery = ''
 
   const WEAPON_CATEGORIES = ['rifle', 'pistol', 'shotgun', 'smg', 'pcc', 'other_weapon']
 
@@ -23,7 +24,6 @@ window.LoadoutModule = (() => {
     { value: 'other',      label: 'Other' },
   ]
 
-  // Maps weapon_attachment.attachment_type → loadout_items.category
   const ATTACHMENT_TO_CATEGORY = {
     optic: 'optic', grip: 'grip', light: 'light', laser: 'laser',
     muzzle: 'suppressor',
@@ -55,6 +55,12 @@ window.LoadoutModule = (() => {
     _userId = userId
     _initialized = true
     bindAddButton()
+    bindPrintButton()
+
+    // Show skeleton while loading
+    const container = document.getElementById('loadout-content')
+    container.innerHTML = Utils.skeletonCards(3)
+
     await loadAll()
   }
 
@@ -65,7 +71,7 @@ window.LoadoutModule = (() => {
     ])
 
     if (itemsResult.error) {
-      document.getElementById('loadout-content').innerHTML = '<p class="loading-text">Error loading loadout.</p>'
+      document.getElementById('loadout-content').innerHTML = '<p class="error-text">Error loading loadout. Please refresh.</p>'
       console.error(itemsResult.error)
       return
     }
@@ -73,7 +79,6 @@ window.LoadoutModule = (() => {
     const items = itemsResult.data || []
     const attachments = attachResult.data || []
 
-    // Build map: weapon_id → [attachments]
     const attachMap = {}
     attachments.forEach(a => {
       if (!attachMap[a.weapon_id]) attachMap[a.weapon_id] = []
@@ -82,42 +87,107 @@ window.LoadoutModule = (() => {
 
     _items = items
     _attachMap = attachMap
+
+    // Publish stats to profile header
+    const weapons     = items.filter(i => WEAPON_CATEGORIES.includes(i.category)).length
+    const atts        = attachments.length
+    const gear        = items.filter(i => !WEAPON_CATEGORIES.includes(i.category)).length
+    if (window._updateProfileStats) window._updateProfileStats(weapons, atts, gear)
+
     renderAll(items, attachMap)
+  }
+
+  function filteredItems(items) {
+    if (!_searchQuery) return items
+    const q = _searchQuery.toLowerCase()
+    return items.filter(i =>
+      (i.name   && i.name.toLowerCase().includes(q)) ||
+      (i.brand  && i.brand.toLowerCase().includes(q)) ||
+      (i.notes  && i.notes.toLowerCase().includes(q)) ||
+      (CATEGORY_LABELS[i.category] || i.category).toLowerCase().includes(q)
+    )
   }
 
   function renderAll(items, attachMap) {
     const container = document.getElementById('loadout-content')
 
     if (items.length === 0) {
-      container.innerHTML = '<p class="loading-text">No loadout items yet. Hit "+ Add Item" to get started.</p>'
+      container.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">🔫</div>
+          <div class="empty-state-title">No Gear on the Rack</div>
+          <div class="empty-state-desc">Start building your loadout — add weapons, optics, armor, and more.</div>
+        </div>
+      `
       return
     }
 
+    // Search bar
+    const searchBar = `
+      <div class="search-bar loadout-search-row">
+        <span class="search-bar-icon">⌕</span>
+        <input id="loadout-search-input" class="search-bar-input"
+          type="search" placeholder="Search loadout…" value="${Utils.esc(_searchQuery)}"
+          aria-label="Search loadout items" />
+        <button class="search-bar-clear${_searchQuery ? ' visible' : ''}" id="loadout-search-clear" aria-label="Clear search">✕</button>
+      </div>
+    `
+
+    const filtered = filteredItems(items)
     const html = GROUPS.map(group => {
-      const groupItems = items.filter(item => group.categories.includes(item.category))
+      const groupItems = filtered.filter(item => group.categories.includes(item.category))
       if (group.key === 'weapons') return renderWeaponGroup(group, groupItems, attachMap)
       return renderSimpleGroup(group, groupItems)
     }).join('')
 
-    container.innerHTML = html
-    bindDeleteButtons()
-    bindEditButtons()
-    bindGroupToggles()
-    bindWeaponCardToggles()
-    bindRemoveAttachmentButtons()
+    container.innerHTML = searchBar + (filtered.length === 0
+      ? `<div class="empty-state"><div class="empty-state-icon">🔍</div><div class="empty-state-title">No Results</div><div class="empty-state-desc">No items match "${Utils.esc(_searchQuery)}"</div></div>`
+      : html)
+
+    // Bind search
+    const searchInput = document.getElementById('loadout-search-input')
+    const searchClear = document.getElementById('loadout-search-clear')
+    if (searchInput) {
+      let debounce
+      searchInput.addEventListener('input', () => {
+        clearTimeout(debounce)
+        debounce = setTimeout(() => {
+          _searchQuery = searchInput.value.trim()
+          renderAll(_items, _attachMap)
+        }, 200)
+      })
+    }
+    if (searchClear) {
+      searchClear.addEventListener('click', () => {
+        _searchQuery = ''
+        renderAll(_items, _attachMap)
+      })
+    }
+
+    if (filtered.length > 0) {
+      bindDeleteButtons()
+      bindEditButtons()
+      bindGroupToggles()
+      bindWeaponCardToggles()
+      bindRemoveAttachmentButtons()
+    }
   }
 
-  // ── Weapon Group (card-based, CoD-style) ──────────────────
-
+  // ── Weapon Group ───────────────────────────────────────────
   function renderWeaponGroup(group, weapons, attachMap) {
     const count = weapons.length
     const bodyHTML = weapons.length === 0
-      ? '<p class="loading-text" style="padding:16px 0;">No weapons added yet.</p>'
+      ? `<div class="empty-state" style="padding:var(--space-lg) 0;">
+           <div class="empty-state-icon">🔫</div>
+           <div class="empty-state-title">No Weapons Yet</div>
+           <div class="empty-state-desc">Add your primary, pistol, or any long gun.</div>
+         </div>`
       : weapons.map(w => renderWeaponCard(w, attachMap[w.id] || [])).join('')
 
     return `
       <div class="loadout-group" data-group="${group.key}">
-        <div class="loadout-group-header" data-toggle="${group.key}">
+        <div class="loadout-group-header" data-toggle="${group.key}" role="button"
+          aria-expanded="true" aria-controls="group-body-${group.key}" tabindex="0">
           <span class="loadout-group-title">${group.icon} ${group.label}</span>
           <span class="loadout-group-count">${count} weapon${count !== 1 ? 's' : ''}</span>
         </div>
@@ -138,13 +208,15 @@ window.LoadoutModule = (() => {
           <div class="build-item">
             <span class="build-item-type">${Utils.esc(attTypeLabel(a.attachment_type))}</span>
             <span class="build-item-name">${Utils.esc(a.name)}${a.brand ? ` <span class="build-item-brand">· ${Utils.esc(a.brand)}</span>` : ''}</span>
-            <button class="btn-remove-attachment" data-id="${a.id}" data-weapon-id="${weapon.id}" title="Remove attachment">✕</button>
+            <button class="btn-remove-attachment" data-id="${a.id}" data-weapon-id="${weapon.id}"
+              title="Remove attachment" aria-label="Remove ${Utils.esc(a.name)}">✕</button>
           </div>
         `).join('')}</div>`
 
     return `
       <div class="weapon-card" data-weapon-id="${weapon.id}">
-        <div class="weapon-card-header" data-weapon-toggle="${weapon.id}">
+        <div class="weapon-card-header" data-weapon-toggle="${weapon.id}"
+          role="button" aria-expanded="false" aria-controls="weapon-build-${weapon.id}" tabindex="0">
           <div class="weapon-card-info">
             <span class="weapon-type-badge">${Utils.esc(CATEGORY_LABELS[weapon.category] || weapon.category)}</span>
             <span class="weapon-card-name">${Utils.esc(weapon.name)}</span>
@@ -154,8 +226,9 @@ window.LoadoutModule = (() => {
             <span class="weapon-build-count">${attCount} part${attCount !== 1 ? 's' : ''}</span>
             <button class="btn btn-primary btn-sm add-weapon-att-btn" data-weapon-id="${weapon.id}">+ Part</button>
             <button class="btn btn-secondary btn-sm edit-loadout-btn" data-id="${weapon.id}">Edit</button>
-            <button class="btn btn-danger btn-sm delete-loadout-btn" data-id="${weapon.id}">Remove</button>
-            <span class="weapon-chevron">▼</span>
+            <button class="btn btn-danger btn-sm delete-loadout-btn" data-id="${weapon.id}"
+              aria-label="Remove ${Utils.esc(weapon.name)}">Remove</button>
+            <span class="weapon-chevron" aria-hidden="true">▼</span>
           </div>
         </div>
         <div class="weapon-card-build" id="weapon-build-${weapon.id}">${attHTML}</div>
@@ -163,12 +236,25 @@ window.LoadoutModule = (() => {
     `
   }
 
-  // ── Simple Group (non-weapon, same table layout) ───────────
-
+  // ── Simple Group (non-weapon) ───────────────────────────────
   function renderSimpleGroup(group, items) {
     const count = items.length
+    const emptyIcons = { attachments: '🔭', knives: '🔪', gear: '🎽', equipment: '🛠️' }
+    const emptyDescs = {
+      attachments: 'Log standalone optics, suppressors, and accessories.',
+      knives:      'Add your fixed blades, folders, and multi-tools.',
+      gear:        'Track plates, carriers, pouches, holsters, and belts.',
+      equipment:   'Log night vision, comms, navigation, and other kit.',
+    }
+
     const rowsHTML = items.length === 0
-      ? `<tr><td colspan="6" class="table-empty">No ${group.label.toLowerCase()} items yet.</td></tr>`
+      ? `<tr><td colspan="6" class="table-empty">
+           <div class="empty-state" style="padding:var(--space-lg) 0;">
+             <div class="empty-state-icon">${emptyIcons[group.key] || '📦'}</div>
+             <div class="empty-state-title">No ${group.label}</div>
+             <div class="empty-state-desc">${emptyDescs[group.key] || ''}</div>
+           </div>
+         </td></tr>`
       : items.map(item => `
           <tr>
             <td>${Utils.esc(CATEGORY_LABELS[item.category] || item.category)}</td>
@@ -177,15 +263,18 @@ window.LoadoutModule = (() => {
             <td>${Utils.esc(item.notes || '—')}</td>
             <td>${Utils.formatDate(item.created_at)}</td>
             <td style="white-space:nowrap;">
-              <button class="btn btn-secondary btn-sm edit-loadout-btn" data-id="${item.id}" style="margin-right:4px;">Edit</button>
-              <button class="btn btn-danger btn-sm delete-loadout-btn" data-id="${item.id}">Remove</button>
+              <button class="btn btn-secondary btn-sm edit-loadout-btn" data-id="${item.id}" style="margin-right:4px;"
+                aria-label="Edit ${Utils.esc(item.name)}">Edit</button>
+              <button class="btn btn-danger btn-sm delete-loadout-btn" data-id="${item.id}"
+                aria-label="Remove ${Utils.esc(item.name)}">Remove</button>
             </td>
           </tr>
         `).join('')
 
     return `
       <div class="loadout-group" data-group="${group.key}">
-        <div class="loadout-group-header" data-toggle="${group.key}">
+        <div class="loadout-group-header" data-toggle="${group.key}" role="button"
+          aria-expanded="true" aria-controls="group-body-${group.key}" tabindex="0">
           <span class="loadout-group-title">${group.icon} ${group.label}</span>
           <span class="loadout-group-count">${count} item${count !== 1 ? 's' : ''}</span>
         </div>
@@ -193,9 +282,7 @@ window.LoadoutModule = (() => {
           <div style="overflow-x:auto;">
             <table class="data-table">
               <thead>
-                <tr>
-                  <th>Category</th><th>Name / Model</th><th>Brand</th><th>Notes</th><th>Added</th><th></th>
-                </tr>
+                <tr><th>Category</th><th>Name / Model</th><th>Brand</th><th>Notes</th><th>Added</th><th></th></tr>
               </thead>
               <tbody>${rowsHTML}</tbody>
             </table>
@@ -206,28 +293,32 @@ window.LoadoutModule = (() => {
   }
 
   // ── Event Bindings ─────────────────────────────────────────
-
   function bindGroupToggles() {
     document.querySelectorAll('[data-toggle]').forEach(header => {
-      header.addEventListener('click', () => {
-        const key = header.dataset.toggle
+      function toggle() {
+        const key  = header.dataset.toggle
         const body = document.getElementById(`group-body-${key}`)
-        body.style.display = body.style.display === 'none' ? '' : 'none'
-      })
+        const isOpen = body.style.display !== 'none'
+        body.style.display = isOpen ? 'none' : ''
+        header.setAttribute('aria-expanded', !isOpen)
+      }
+      header.addEventListener('click', toggle)
+      header.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle() }})
     })
   }
 
   function bindWeaponCardToggles() {
     document.querySelectorAll('[data-weapon-toggle]').forEach(header => {
-      header.addEventListener('click', (e) => {
+      function toggle(e) {
         if (e.target.closest('button')) return
         const weaponId = header.dataset.weaponToggle
-        const build = document.getElementById(`weapon-build-${weaponId}`)
-        const card = header.closest('.weapon-card')
-        const isOpen = card.classList.contains('weapon-card-open')
-        build.style.display = isOpen ? 'none' : ''
+        const card     = header.closest('.weapon-card')
+        const isOpen   = card.classList.contains('weapon-card-open')
         card.classList.toggle('weapon-card-open', !isOpen)
-      })
+        header.setAttribute('aria-expanded', !isOpen)
+      }
+      header.addEventListener('click', toggle)
+      header.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(e) }})
     })
 
     document.querySelectorAll('.add-weapon-att-btn').forEach(btn => {
@@ -237,7 +328,15 @@ window.LoadoutModule = (() => {
 
   function bindDeleteButtons() {
     document.querySelectorAll('.delete-loadout-btn').forEach(btn => {
-      btn.addEventListener('click', () => deleteItem(btn.dataset.id))
+      btn.addEventListener('click', () => {
+        const item = _items.find(i => i.id === btn.dataset.id)
+        const name = item ? item.name : 'this item'
+        Utils.confirmDialog(
+          `Remove "${name}" from your loadout? All associated build parts will also be deleted.`,
+          () => deleteItem(btn.dataset.id),
+          'Remove Item'
+        )
+      })
     })
   }
 
@@ -326,16 +425,16 @@ window.LoadoutModule = (() => {
       </form>
     `)
 
-    const modalEl         = document.querySelector('.modal')
-    const categorySelect  = document.getElementById('elf-category')
-    const nonWeaponSection    = document.getElementById('elf-nonweapon')
+    const modalEl              = document.querySelector('.modal')
+    const categorySelect       = document.getElementById('elf-category')
+    const nonWeaponSection     = document.getElementById('elf-nonweapon')
     const weaponBuilderSection = document.getElementById('elf-weapon-builder')
 
     categorySelect.value = item.category
 
     function updateMode() {
       const isW = WEAPON_CATEGORIES.includes(categorySelect.value)
-      nonWeaponSection.style.display    = isW ? 'none' : ''
+      nonWeaponSection.style.display     = isW ? 'none' : ''
       weaponBuilderSection.style.display = isW ? '' : 'none'
       if (modalEl) modalEl.style.maxWidth = isW ? '720px' : '580px'
     }
@@ -346,7 +445,7 @@ window.LoadoutModule = (() => {
     function renderPendingBuild(atts) {
       const container = document.getElementById('elf-pending-build')
       if (atts.length === 0) {
-        container.innerHTML = '<p class="build-empty">No attachments yet — hit "+ Add Attachment" to start building your weapon.</p>'
+        container.innerHTML = '<p class="build-empty">No attachments yet — hit "+ Add Attachment" to start building.</p>'
         return
       }
       const typeLabel = (val) => ATTACHMENT_TYPES.find(t => t.value === val)?.label || val
@@ -356,7 +455,8 @@ window.LoadoutModule = (() => {
             <div class="build-item">
               <span class="build-item-type">${Utils.esc(typeLabel(a.type))}</span>
               <span class="build-item-name">${Utils.esc(a.name)}${a.brand ? ` <span class="build-item-brand">· ${Utils.esc(a.brand)}</span>` : ''}</span>
-              <button class="btn-remove-pending" data-temp-id="${a.tempId}" type="button">✕</button>
+              <button class="btn-remove-pending" data-temp-id="${a.tempId}" type="button"
+                aria-label="Remove ${Utils.esc(a.name)}">✕</button>
             </div>
           `).join('')}
         </div>
@@ -418,7 +518,6 @@ window.LoadoutModule = (() => {
       }
 
       if (isW) {
-        // Replace all attachments: delete existing, re-insert all in pendingAtts
         await window.sb.from('weapon_attachments').delete().eq('weapon_id', itemId)
         if (pendingAtts.length > 0) {
           const { error: attErr } = await window.sb.from('weapon_attachments').insert(
@@ -443,17 +542,12 @@ window.LoadoutModule = (() => {
     })
   }
 
-  // ── Delete Loadout Item ────────────────────────────────────
-
   async function deleteItem(id) {
-    if (!confirm('Remove this item from your loadout? All associated build parts will also be deleted.')) return
     const { error } = await window.sb.from('loadout_items').delete().eq('id', id)
     if (error) { Utils.showToast('Delete failed: ' + error.message, 'error'); return }
     Utils.showToast('Item removed.')
     await loadAll()
   }
-
-  // ── Remove Attachment Modal (Delete or Move to Loadout) ────
 
   async function openRemoveAttachmentModal(attachmentId) {
     const { data, error } = await window.sb
@@ -496,11 +590,8 @@ window.LoadoutModule = (() => {
       const [delResult, insResult] = await Promise.all([
         window.sb.from('weapon_attachments').delete().eq('id', attachmentId),
         window.sb.from('loadout_items').insert({
-          user_id: _userId,
-          category,
-          name: data.name,
-          brand: data.brand || null,
-          notes: data.notes || null,
+          user_id: _userId, category, name: data.name,
+          brand: data.brand || null, notes: data.notes || null,
         }),
       ])
       if (delResult.error || insResult.error) {
@@ -511,17 +602,20 @@ window.LoadoutModule = (() => {
       await loadAll()
     })
 
-    document.getElementById('ra-delete').addEventListener('click', async () => {
-      if (!confirm(`Permanently delete "${data.name}"?`)) return
-      const { error: delErr } = await window.sb.from('weapon_attachments').delete().eq('id', attachmentId)
-      if (delErr) { Utils.showToast('Delete failed: ' + delErr.message, 'error'); return }
+    document.getElementById('ra-delete').addEventListener('click', () => {
       Utils.closeModal()
-      Utils.showToast('Attachment deleted.')
-      await loadAll()
+      Utils.confirmDialog(
+        `Permanently delete "${data.name}"?`,
+        async () => {
+          const { error: delErr } = await window.sb.from('weapon_attachments').delete().eq('id', attachmentId)
+          if (delErr) { Utils.showToast('Delete failed: ' + delErr.message, 'error'); return }
+          Utils.showToast('Attachment deleted.')
+          await loadAll()
+        },
+        'Delete Permanently'
+      )
     })
   }
-
-  // ── Add Attachment to Existing Weapon ──────────────────────
 
   function openAddAttachmentModal(weaponId) {
     const attTypeOptions = ATTACHMENT_TYPES.map(t =>
@@ -532,9 +626,7 @@ window.LoadoutModule = (() => {
       <form id="att-form">
         <div class="form-group">
           <label class="form-label">Attachment Type</label>
-          <select name="attachment_type" class="form-select" required>
-            ${attTypeOptions}
-          </select>
+          <select name="attachment_type" class="form-select" required>${attTypeOptions}</select>
         </div>
         <div class="form-group">
           <label class="form-label">Name / Model <span style="color:var(--color-red)">*</span></label>
@@ -546,7 +638,7 @@ window.LoadoutModule = (() => {
         </div>
         <div class="form-group">
           <label class="form-label">Notes</label>
-          <textarea name="notes" class="form-textarea" placeholder="Additional details, specs, finish, etc."></textarea>
+          <textarea name="notes" class="form-textarea" placeholder="Specs, finish, serial, etc."></textarea>
         </div>
         <div class="form-actions">
           <button type="button" class="btn btn-secondary" onclick="Utils.closeModal()">Cancel</button>
@@ -557,13 +649,12 @@ window.LoadoutModule = (() => {
 
     document.getElementById('att-form').addEventListener('submit', async (e) => {
       e.preventDefault()
-      const fd = new FormData(e.target)
+      const fd  = new FormData(e.target)
       const btn = e.target.querySelector('[type=submit]')
       btn.disabled = true; btn.textContent = 'Saving...'
 
       const { error } = await window.sb.from('weapon_attachments').insert({
-        weapon_id: weaponId,
-        user_id: _userId,
+        weapon_id: weaponId, user_id: _userId,
         attachment_type: fd.get('attachment_type'),
         name: fd.get('name').trim(),
         brand: fd.get('brand').trim() || null,
@@ -581,10 +672,70 @@ window.LoadoutModule = (() => {
     })
   }
 
-  // ── Add Item Modal (category-aware, morphs for weapons) ────
-
+  // ── Add Item Modal ──────────────────────────────────────────
   function bindAddButton() {
     document.getElementById('loadout-add-btn').addEventListener('click', openAddModal)
+  }
+
+  function bindPrintButton() {
+    const btn = document.getElementById('loadout-print-btn')
+    if (!btn) return
+    btn.addEventListener('click', () => printLoadout())
+  }
+
+  function printLoadout() {
+    const weapons = _items.filter(i => WEAPON_CATEGORIES.includes(i.category))
+    const gear    = _items.filter(i => !WEAPON_CATEGORIES.includes(i.category))
+
+    let html = `<!DOCTYPE html><html><head><title>Loadout</title>
+    <style>body{font-family:Courier New,monospace;color:#000;background:#fff;padding:20px;}
+    h1{font-size:1.4rem;text-transform:uppercase;letter-spacing:0.1em;border-bottom:2px solid #000;margin-bottom:16px;}
+    h2{font-size:1rem;text-transform:uppercase;letter-spacing:0.1em;margin:20px 0 8px;border-bottom:1px solid #ccc;}
+    .weapon{margin-bottom:16px;padding-left:12px;border-left:3px solid #000;}
+    .weapon-name{font-size:0.95rem;font-weight:bold;}
+    .weapon-badge{font-size:0.7rem;text-transform:uppercase;opacity:0.6;}
+    .att{font-size:0.8rem;padding:2px 0 2px 12px;}
+    .att::before{content:"— ";}
+    table{width:100%;border-collapse:collapse;font-size:0.8rem;margin-top:8px;}
+    th{text-align:left;border-bottom:1px solid #000;padding:4px 8px;text-transform:uppercase;font-size:0.7rem;}
+    td{padding:4px 8px;border-bottom:1px solid #eee;}
+    </style></head><body>`
+
+    html += `<h1>Loadout — ${document.getElementById('profile-name')?.textContent || ''}</h1>`
+    html += `<p style="font-size:0.75rem;opacity:0.5;">Exported ${new Date().toLocaleDateString()}</p>`
+
+    if (weapons.length) {
+      html += `<h2>🔫 Weapons (${weapons.length})</h2>`
+      weapons.forEach(w => {
+        const atts = _attachMap[w.id] || []
+        html += `<div class="weapon">
+          <div class="weapon-badge">${CATEGORY_LABELS[w.category] || w.category}</div>
+          <div class="weapon-name">${Utils.esc(w.name)}</div>
+          ${w.notes ? `<div style="font-size:0.8rem;opacity:0.7;">${Utils.esc(w.notes)}</div>` : ''}
+          ${atts.map(a => `<div class="att">${Utils.esc(a.name)}${a.brand ? ` · ${Utils.esc(a.brand)}` : ''}</div>`).join('')}
+        </div>`
+      })
+    }
+
+    if (gear.length) {
+      GROUPS.filter(g => g.key !== 'weapons').forEach(group => {
+        const groupItems = gear.filter(i => group.categories.includes(i.category))
+        if (!groupItems.length) return
+        html += `<h2>${group.icon} ${group.label} (${groupItems.length})</h2>
+        <table><thead><tr><th>Category</th><th>Name</th><th>Brand</th><th>Notes</th></tr></thead><tbody>`
+        groupItems.forEach(i => {
+          html += `<tr><td>${Utils.esc(CATEGORY_LABELS[i.category] || i.category)}</td>
+            <td>${Utils.esc(i.name)}</td><td>${Utils.esc(i.brand || '—')}</td><td>${Utils.esc(i.notes || '—')}</td></tr>`
+        })
+        html += `</tbody></table>`
+      })
+    }
+
+    html += `</body></html>`
+    const win = window.open('', '_blank')
+    win.document.write(html)
+    win.document.close()
+    win.print()
   }
 
   function buildCategoryOptions() {
@@ -615,7 +766,6 @@ window.LoadoutModule = (() => {
           </div>
         </div>
 
-        <!-- Non-weapon fields -->
         <div id="lf-nonweapon">
           <div class="form-group">
             <label class="form-label">Brand / Manufacturer</label>
@@ -627,20 +777,16 @@ window.LoadoutModule = (() => {
           </div>
         </div>
 
-        <!-- Weapon builder — shown when a weapon category is selected -->
         <div id="lf-weapon-builder" style="display:none;">
           <div class="form-group">
             <label class="form-label">Notes / Config</label>
-            <textarea name="weapon_notes" class="form-textarea" placeholder="Caliber, serial number, overall configuration overview..."></textarea>
+            <textarea name="weapon_notes" class="form-textarea" placeholder="Caliber, serial number, configuration overview..."></textarea>
           </div>
-
           <div class="weapon-builder-section">
             <div class="weapon-builder-header">
               <span class="weapon-builder-title">🔧 Build Parts</span>
               <button type="button" class="btn btn-primary btn-sm" id="lf-toggle-att">+ Add Attachment</button>
             </div>
-
-            <!-- Inline add-attachment form -->
             <div id="lf-att-inline" class="att-inline-form" style="display:none;">
               <div class="form-row-3">
                 <div class="form-group" style="margin-bottom:0;">
@@ -661,8 +807,6 @@ window.LoadoutModule = (() => {
                 <button type="button" class="btn btn-primary btn-sm" id="lf-att-confirm">Add to Build</button>
               </div>
             </div>
-
-            <!-- Live build list (pending attachments before save) -->
             <div id="lf-pending-build" class="pending-build-list">
               <p class="build-empty">No attachments yet — hit "+ Add Attachment" to start building your weapon.</p>
             </div>
@@ -692,7 +836,6 @@ window.LoadoutModule = (() => {
     categorySelect.addEventListener('change', updateMode)
     updateMode()
 
-    // Toggle inline attachment form
     document.getElementById('lf-toggle-att').addEventListener('click', () => {
       const form = document.getElementById('lf-att-inline')
       const showing = form.style.display !== 'none'
@@ -705,13 +848,12 @@ window.LoadoutModule = (() => {
     })
 
     document.getElementById('lf-att-confirm').addEventListener('click', () => {
-      const type = document.getElementById('lf-att-type').value
-      const name = document.getElementById('lf-att-name').value.trim()
+      const type  = document.getElementById('lf-att-type').value
+      const name  = document.getElementById('lf-att-name').value.trim()
       const brand = document.getElementById('lf-att-brand').value.trim()
       if (!name) { document.getElementById('lf-att-name').focus(); return }
-
       pendingAtts.push({ type, name, brand, tempId: Date.now() + Math.random() })
-      document.getElementById('lf-att-name').value = ''
+      document.getElementById('lf-att-name').value  = ''
       document.getElementById('lf-att-brand').value = ''
       document.getElementById('lf-att-inline').style.display = 'none'
       renderPendingBuild(pendingAtts)
@@ -745,19 +887,17 @@ window.LoadoutModule = (() => {
 
     document.getElementById('loadout-form').addEventListener('submit', async (e) => {
       e.preventDefault()
-      const fd = new FormData(e.target)
+      const fd       = new FormData(e.target)
       const isWeapon = WEAPON_CATEGORIES.includes(fd.get('category'))
-      const btn = document.getElementById('lf-submit')
+      const btn      = document.getElementById('lf-submit')
       btn.disabled = true; btn.textContent = 'Saving...'
 
       const payload = {
-        user_id: _userId,
+        user_id:  _userId,
         category: fd.get('category'),
-        name: fd.get('name').trim(),
-        brand: isWeapon ? null : (fd.get('brand')?.trim() || null),
-        notes: isWeapon
-          ? (fd.get('weapon_notes')?.trim() || null)
-          : (fd.get('notes')?.trim() || null),
+        name:     fd.get('name').trim(),
+        brand:    isWeapon ? null : (fd.get('brand')?.trim() || null),
+        notes:    isWeapon ? (fd.get('weapon_notes')?.trim() || null) : (fd.get('notes')?.trim() || null),
       }
 
       const { data: newItem, error } = await window.sb
@@ -769,26 +909,20 @@ window.LoadoutModule = (() => {
         return
       }
 
-      // Save all pending attachments for the new weapon
       if (isWeapon && pendingAtts.length > 0) {
-        const attPayloads = pendingAtts.map(a => ({
-          weapon_id: newItem.id,
-          user_id: _userId,
-          attachment_type: a.type,
-          name: a.name,
-          brand: a.brand || null,
-        }))
-        const { error: attErr } = await window.sb.from('weapon_attachments').insert(attPayloads)
+        const { error: attErr } = await window.sb.from('weapon_attachments').insert(
+          pendingAtts.map(a => ({
+            weapon_id: newItem.id, user_id: _userId,
+            attachment_type: a.type, name: a.name, brand: a.brand || null,
+          }))
+        )
         if (attErr) Utils.showToast('Weapon saved but some parts failed: ' + attErr.message, 'error')
       }
 
       Utils.closeModal()
-      const partCount = pendingAtts.length
-      Utils.showToast(
-        isWeapon
-          ? `Weapon added with ${partCount} part${partCount !== 1 ? 's' : ''}!`
-          : 'Item added to loadout!'
-      )
+      Utils.showToast(isWeapon
+        ? `Weapon added with ${pendingAtts.length} part${pendingAtts.length !== 1 ? 's' : ''}!`
+        : 'Item added to loadout!')
       await loadAll()
     })
   }

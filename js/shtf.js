@@ -2,30 +2,61 @@
 window.SHTFModule = (() => {
   let _userId = null
   let _initialized = false
-  let _activeSubTab = 'food'
+  let _activeSubTab = 'overview'
+  let _searchQuery = ''
+  const loadedTabs = {}
+  const _dataCache = {}   // { type: items[] } populated as tabs load
+
+  const CATEGORY_META = {
+    food:     { label: 'Food',        icon: '🥫', table: 'shtf_food' },
+    water:    { label: 'Water',       icon: '💧', table: 'shtf_water' },
+    medical:  { label: 'Medical',     icon: '🩺', table: 'shtf_medical' },
+    gear:     { label: 'Gear',        icon: '🎒', table: 'shtf_gear' },
+    ammo:     { label: 'Ammo',        icon: '🔫', table: 'shtf_ammo' },
+    seeds:    { label: 'Seed Bank',   icon: '🌱', table: 'shtf_seeds' },
+    prepplans:{ label: 'Prep Plans',  icon: '📋', table: 'shtf_prep_plans' },
+    bugout:   { label: 'Bug-Out',     icon: '🗺',  table: 'shtf_bugout_plans' },
+  }
 
   async function init(userId) {
     if (_initialized) return
     _userId = userId
     _initialized = true
+
     bindSubTabs()
     bindAddButtons()
-    activateSubTab('food')
+    bindGlobalSearch()
+
+    // Check expiry alerts
+    checkExpiryAlerts()
+
+    // Restore sub-tab from URL
+    const urlSubTab = Utils.getParam('shtf')
+    activateSubTab(urlSubTab || 'overview')
   }
 
-  // ── Sub-tab Navigation ─────────────────────────────────────
+  // ── Sub-tab Navigation ────────────────────────────────────────
+
   function bindSubTabs() {
     document.querySelectorAll('.shtf-tab-btn').forEach(btn => {
       btn.addEventListener('click', () => activateSubTab(btn.dataset.shtf))
     })
   }
 
-  const loadedTabs = {}
-
   function activateSubTab(name) {
     _activeSubTab = name
-    document.querySelectorAll('.shtf-tab-btn').forEach(b => b.classList.toggle('active', b.dataset.shtf === name))
-    document.querySelectorAll('.shtf-subsection').forEach(s => s.classList.toggle('active', s.id === `shtf-${name}`))
+
+    document.querySelectorAll('.shtf-tab-btn').forEach(b => {
+      const isActive = b.dataset.shtf === name
+      b.classList.toggle('active', isActive)
+      b.setAttribute('aria-selected', String(isActive))
+    })
+    document.querySelectorAll('.shtf-subsection').forEach(s => {
+      s.classList.toggle('active', s.id === `shtf-${name}`)
+    })
+
+    // Persist in URL
+    Utils.setParam('shtf', name)
 
     if (!loadedTabs[name]) {
       loadedTabs[name] = true
@@ -39,37 +70,331 @@ window.SHTFModule = (() => {
     })
   }
 
-  // ── Generic table loader ───────────────────────────────────
+  // ── Global Search ────────────────────────────────────────────
+
+  function bindGlobalSearch() {
+    const toolbar = document.querySelector('#tab-shtf .toolbar')
+    if (!toolbar) return
+
+    const searchWrap = document.createElement('div')
+    searchWrap.className = 'search-bar'
+    searchWrap.style.cssText = 'flex:1;min-width:180px;max-width:320px;'
+    searchWrap.innerHTML = `
+      <span class="search-bar-icon">⌕</span>
+      <input type="text" id="shtf-search-input" class="search-bar-input"
+        placeholder="Search all categories…" aria-label="Search SHTF tracker" />
+    `
+    toolbar.appendChild(searchWrap)
+
+    const input = document.getElementById('shtf-search-input')
+    let debounceTimer
+    input.addEventListener('input', () => {
+      clearTimeout(debounceTimer)
+      debounceTimer = setTimeout(() => {
+        _searchQuery = input.value.trim()
+        if (_searchQuery) renderGlobalSearchResults()
+        else reRenderActiveTab()
+      }, 250)
+    })
+  }
+
+  function renderGlobalSearchResults() {
+    const q = _searchQuery.toLowerCase()
+    const resultsHTML = []
+
+    Object.keys(_dataCache).forEach(type => {
+      const items = _dataCache[type] || []
+      const meta = CATEGORY_META[type]
+      let matched = []
+
+      if (type === 'food' || type === 'water' || type === 'medical' || type === 'gear') {
+        matched = items.filter(i =>
+          (i.item && i.item.toLowerCase().includes(q)) ||
+          (i.notes && i.notes.toLowerCase().includes(q)) ||
+          (i.quantity && String(i.quantity).toLowerCase().includes(q))
+        )
+      } else if (type === 'ammo') {
+        matched = items.filter(i =>
+          (i.caliber && i.caliber.toLowerCase().includes(q)) ||
+          (i.brand   && i.brand.toLowerCase().includes(q)) ||
+          (i.notes   && i.notes.toLowerCase().includes(q))
+        )
+      } else if (type === 'seeds') {
+        matched = items.filter(i =>
+          (i.seed_name && i.seed_name.toLowerCase().includes(q)) ||
+          (i.seed_type && i.seed_type.toLowerCase().includes(q)) ||
+          (i.variety   && i.variety.toLowerCase().includes(q)) ||
+          (i.notes     && i.notes.toLowerCase().includes(q))
+        )
+      } else if (type === 'prepplans') {
+        matched = items.filter(i =>
+          (i.title       && i.title.toLowerCase().includes(q)) ||
+          (i.description && i.description.toLowerCase().includes(q))
+        )
+      } else if (type === 'bugout') {
+        matched = items.filter(i =>
+          (i.title       && i.title.toLowerCase().includes(q)) ||
+          (i.description && i.description.toLowerCase().includes(q)) ||
+          (i.route       && i.route.toLowerCase().includes(q)) ||
+          (i.destination && i.destination.toLowerCase().includes(q))
+        )
+      }
+
+      if (matched.length > 0) {
+        resultsHTML.push(`
+          <div style="margin-bottom:var(--space-lg);">
+            <div class="section-heading" style="font-size:0.7rem;">${meta.icon} ${meta.label} (${matched.length})</div>
+            ${matched.map(i => {
+              const name = i.item || i.caliber || i.seed_name || i.title || '—'
+              const sub  = i.quantity || i.brand || i.seed_type || i.status || ''
+              return `<div style="padding:var(--space-sm) 0;border-bottom:1px solid var(--color-border);font-size:0.85rem;">
+                <span style="color:var(--color-text-primary);">${Utils.esc(name)}</span>
+                ${sub ? `<span style="color:var(--color-text-muted);margin-left:var(--space-sm);font-size:0.75rem;">${Utils.esc(sub)}</span>` : ''}
+              </div>`
+            }).join('')}
+          </div>
+        `)
+      }
+    })
+
+    // Show results in the currently active sub-section
+    const activeSection = document.querySelector('.shtf-subsection.active')
+    if (!activeSection) return
+
+    const contentId = activeSection.id + '-content'
+    const contentEl = document.getElementById(contentId) || activeSection.querySelector('[id$="-content"]')
+    const target = contentEl || activeSection
+
+    if (resultsHTML.length === 0) {
+      target.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">⌕</div>
+          <div class="empty-state-title">No Results Found</div>
+          <div class="empty-state-desc">No items match "${Utils.esc(_searchQuery)}" in any loaded category.</div>
+        </div>`
+    } else {
+      target.innerHTML = `<div style="padding:var(--space-md) 0;">${resultsHTML.join('')}</div>`
+    }
+  }
+
+  function reRenderActiveTab() {
+    loadedTabs[_activeSubTab] = false
+    loadSubSection(_activeSubTab)
+  }
+
+  // ── Expiry Alert Banner ───────────────────────────────────────
+
+  async function checkExpiryAlerts() {
+    const alertsEl = document.getElementById('shtf-alerts')
+    if (!alertsEl) return
+
+    const now = new Date()
+    const in30 = new Date(now)
+    in30.setDate(in30.getDate() + 30)
+    const in30Str = in30.toISOString().split('T')[0]
+    const todayStr = now.toISOString().split('T')[0]
+
+    const [foodRes, seedsRes] = await Promise.all([
+      window.sb.from('shtf_food').select('item, expiry_date').eq('user_id', _userId).not('expiry_date', 'is', null),
+      window.sb.from('shtf_seeds').select('seed_name, rotate_by_date').eq('user_id', _userId).not('rotate_by_date', 'is', null),
+    ])
+
+    const expiredFood    = (foodRes.data  || []).filter(i => i.expiry_date    < todayStr)
+    const expiringFood   = (foodRes.data  || []).filter(i => i.expiry_date   >= todayStr && i.expiry_date <= in30Str)
+    const expiredSeeds   = (seedsRes.data || []).filter(i => i.rotate_by_date < todayStr)
+    const expiringSeeds  = (seedsRes.data || []).filter(i => i.rotate_by_date >= todayStr && i.rotate_by_date <= in30Str)
+
+    const expiredCount  = expiredFood.length + expiredSeeds.length
+    const expiringCount = expiringFood.length + expiringSeeds.length
+
+    if (expiredCount === 0 && expiringCount === 0) {
+      alertsEl.innerHTML = ''
+      return
+    }
+
+    const parts = []
+    if (expiredCount > 0)  parts.push(`${expiredCount} item${expiredCount > 1 ? 's' : ''} expired`)
+    if (expiringCount > 0) parts.push(`${expiringCount} item${expiringCount > 1 ? 's' : ''} expiring within 30 days`)
+
+    const isRed = expiredCount > 0
+
+    alertsEl.innerHTML = `
+      <div class="alert-banner${isRed ? ' alert-red' : ''}" role="alert">
+        <span>⚠ ${parts.join(' · ')} — check Food and Seed Bank tabs</span>
+        <button class="alert-banner-dismiss" aria-label="Dismiss alert">✕</button>
+      </div>
+    `
+    alertsEl.querySelector('.alert-banner-dismiss').addEventListener('click', () => {
+      alertsEl.innerHTML = ''
+    })
+  }
+
+  // ── Overview Dashboard ────────────────────────────────────────
+
+  async function loadOverview() {
+    const container = document.getElementById('shtf-overview')
+    container.innerHTML = Utils.skeletonCards(4)
+
+    const now = new Date()
+    const in30 = new Date(now); in30.setDate(in30.getDate() + 30)
+    const in30Str  = in30.toISOString().split('T')[0]
+    const todayStr = now.toISOString().split('T')[0]
+
+    const tableTypes = ['food', 'water', 'medical', 'gear', 'ammo', 'seeds', 'prepplans', 'bugout']
+    const results = await Promise.all(
+      tableTypes.map(type =>
+        window.sb.from(CATEGORY_META[type].table).select('*').eq('user_id', _userId)
+          .then(({ data }) => ({ type, items: data || [] }))
+      )
+    )
+
+    const counts    = {}
+    const alertsMap = {}
+
+    results.forEach(({ type, items }) => {
+      counts[type] = items.length
+      _dataCache[type] = items
+
+      if (type === 'food') {
+        alertsMap.food = items.filter(i => i.expiry_date && i.expiry_date <= in30Str).length
+      }
+      if (type === 'seeds') {
+        alertsMap.seeds = items.filter(i => i.rotate_by_date && i.rotate_by_date <= in30Str).length
+      }
+      if (type === 'prepplans') {
+        counts.prepplansComplete = items.filter(i => i.status === 'complete').length
+        counts.prepplansTotal    = items.length
+      }
+    })
+
+    // Total items across supply categories
+    const supplyTypes = ['food', 'water', 'medical', 'gear', 'ammo', 'seeds']
+    const totalItems  = supplyTypes.reduce((sum, t) => sum + (counts[t] || 0), 0)
+
+    const planPct = counts.prepplansTotal > 0
+      ? Math.round((counts.prepplansComplete / counts.prepplansTotal) * 100)
+      : 0
+
+    const tileHTML = (type) => {
+      const meta = CATEGORY_META[type]
+      if (!meta) return ''
+      const count    = counts[type] || 0
+      const hasAlert = (alertsMap[type] || 0) > 0
+      const tileClass = count === 0 ? 'empty' : hasAlert ? 'has-alerts' : 'has-items'
+      return `
+        <div class="readiness-tile ${tileClass}" role="button" tabindex="0"
+          aria-label="View ${meta.label}" data-nav="${type}"
+          style="cursor:pointer;">
+          <div style="font-size:1.5rem;margin-bottom:var(--space-xs);">${meta.icon}</div>
+          <div style="font-family:var(--font-mono);font-size:0.75rem;letter-spacing:0.06em;text-transform:uppercase;font-weight:700;margin-bottom:2px;">
+            ${meta.label}
+          </div>
+          <div style="font-size:0.8rem;color:var(--color-text-muted);">
+            ${count === 0 ? 'No items' : `${count} item${count !== 1 ? 's' : ''}`}
+          </div>
+          ${hasAlert ? `<div style="font-size:0.7rem;color:var(--color-amber);margin-top:4px;">⚠ ${alertsMap[type]} expiring</div>` : ''}
+        </div>
+      `
+    }
+
+    container.innerHTML = `
+      <div class="stats-panel" style="margin-bottom:var(--space-lg);">
+        <div class="stat-card">
+          <div class="stat-value">${totalItems}</div>
+          <div class="stat-label">Total Supplies</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">${counts.prepplansComplete || 0}/${counts.prepplansTotal || 0}</div>
+          <div class="stat-label">Plans Complete</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">${counts.bugout || 0}</div>
+          <div class="stat-label">Bug-Out Plans</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value${(alertsMap.food || 0) + (alertsMap.seeds || 0) > 0 ? ' expiry-warn' : ''}">${(alertsMap.food || 0) + (alertsMap.seeds || 0)}</div>
+          <div class="stat-label">Expiring Soon</div>
+        </div>
+      </div>
+
+      ${counts.prepplansTotal > 0 ? `
+      <div style="margin-bottom:var(--space-lg);">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--space-sm);">
+          <span style="font-family:var(--font-mono);font-size:0.75rem;letter-spacing:0.06em;text-transform:uppercase;color:var(--color-text-muted);">
+            Prep Plan Progress
+          </span>
+          <span style="font-size:0.8rem;color:var(--color-text-primary);">${planPct}%</span>
+        </div>
+        <div class="progress-bar-wrap">
+          <div class="progress-bar-track">
+            <div class="progress-bar-fill" style="width:${planPct}%;"></div>
+          </div>
+        </div>
+        <div style="font-size:0.75rem;color:var(--color-text-muted);margin-top:var(--space-xs);">
+          ${counts.prepplansComplete} of ${counts.prepplansTotal} plans complete
+        </div>
+      </div>` : ''}
+
+      <div class="readiness-grid">
+        ${supplyTypes.map(tileHTML).join('')}
+        ${tileHTML('prepplans')}
+        ${tileHTML('bugout')}
+      </div>
+    `
+
+    // Navigate to sub-tab on tile click
+    container.querySelectorAll('.readiness-tile[data-nav]').forEach(tile => {
+      function nav() { activateSubTab(tile.dataset.nav) }
+      tile.addEventListener('click', nav)
+      tile.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); nav() } })
+    })
+  }
+
+  // ── Generic Table Loader ──────────────────────────────────────
+
   async function loadSubSection(type) {
+    if (type === 'overview')  return loadOverview()
     if (type === 'prepplans') return loadPrepPlans()
     if (type === 'bugout')    return loadBugoutPlans()
 
-    const tableMap = {
-      food: 'shtf_food', water: 'shtf_water',
-      medical: 'shtf_medical', gear: 'shtf_gear', ammo: 'shtf_ammo',
-      seeds: 'shtf_seeds',
-    }
-    const table = tableMap[type]
+    const meta      = CATEGORY_META[type]
     const container = document.getElementById(`shtf-${type}-content`)
+    if (!meta || !container) return
+
+    container.innerHTML = Utils.skeletonRows(3)
 
     try {
       const { data, error } = await window.sb
-        .from(table)
+        .from(meta.table)
         .select('*')
         .eq('user_id', _userId)
         .order('created_at', { ascending: true })
 
-      if (error) { container.innerHTML = '<p class="loading-text">Error loading data: ' + Utils.esc(error.message) + '</p>'; return }
+      if (error) {
+        container.innerHTML = '<p class="loading-text">Error loading data: ' + Utils.esc(error.message) + '</p>'
+        return
+      }
+      _dataCache[type] = data || []
       renderSimpleTable(type, data || [], container)
     } catch (err) {
       container.innerHTML = '<p class="loading-text">Failed to load data.</p>'
     }
   }
 
-  // ── Simple supply tables ───────────────────────────────────
+  // ── Simple Supply Tables ──────────────────────────────────────
+
   function renderSimpleTable(type, items, container) {
+    const meta = CATEGORY_META[type]
+    const icon = meta ? meta.icon : '📦'
+    const label = meta ? meta.label : type
+
     if (items.length === 0) {
-      container.innerHTML = `<p class="loading-text">No ${type} supplies logged yet.</p>`
+      container.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">${icon}</div>
+          <div class="empty-state-title">No ${label} Logged</div>
+          <div class="empty-state-desc">Add your first ${label.toLowerCase()} item to start tracking your supplies.</div>
+        </div>`
       return
     }
 
@@ -85,11 +410,11 @@ window.SHTFModule = (() => {
           <td>${Utils.esc(item.quantity || '—')}</td>
           <td class="${expClass}">${item.expiry_date ? Utils.formatDateShort(item.expiry_date) : '—'}</td>
           <td>${Utils.esc(item.notes || '—')}</td>
-          <td><button class="btn btn-danger btn-sm shtf-del-btn" data-table="shtf_food" data-id="${item.id}" data-type="food">✕</button></td>
+          <td><button class="btn btn-danger btn-sm shtf-del-btn" data-table="shtf_food" data-id="${item.id}" data-type="food" aria-label="Remove item">✕</button></td>
         </tr>`
       }
     } else if (type === 'seeds') {
-      headersHTML = '<th>Seed Name</th><th>Type</th><th>Variety</th><th>Heirloom</th><th>Qty</th><th>Harvest Yr</th><th>Rotate By</th><th>Storage</th><th>Germ %</th><th>Notes</th><th></th>'
+      headersHTML = '<th>Seed</th><th>Type</th><th>Variety</th><th>Heirloom</th><th>Qty</th><th>Yr</th><th>Rotate By</th><th>Storage</th><th>Germ %</th><th>Notes</th><th></th>'
       rowsFn = item => {
         const rotClass = Utils.getExpiryClass(item.rotate_by_date)
         return `<tr>
@@ -103,25 +428,41 @@ window.SHTFModule = (() => {
           <td>${Utils.esc(item.storage_method || '—')}</td>
           <td>${item.germination_rate != null ? item.germination_rate + '%' : '—'}</td>
           <td>${Utils.esc(item.notes || '—')}</td>
-          <td><button class="btn btn-danger btn-sm shtf-del-btn" data-table="shtf_seeds" data-id="${item.id}" data-type="seeds">✕</button></td>
+          <td><button class="btn btn-danger btn-sm shtf-del-btn" data-table="shtf_seeds" data-id="${item.id}" data-type="seeds" aria-label="Remove item">✕</button></td>
         </tr>`
       }
     } else if (type === 'ammo') {
-      headersHTML = '<th>Caliber</th><th>Quantity</th><th>Brand</th><th>Notes</th><th></th>'
+      // Ammo visual bars above table
+      const ammoBarHTML = renderAmmoBars(items)
+
+      headersHTML = '<th>Caliber</th><th>Qty (rds)</th><th>Brand</th><th>Notes</th><th></th>'
       rowsFn = item => `<tr>
         <td>${Utils.esc(item.caliber)}</td>
-        <td>${item.quantity != null ? item.quantity + ' rds' : '—'}</td>
+        <td>${item.quantity != null ? item.quantity.toLocaleString() : '—'}</td>
         <td>${Utils.esc(item.brand || '—')}</td>
         <td>${Utils.esc(item.notes || '—')}</td>
-        <td><button class="btn btn-danger btn-sm shtf-del-btn" data-table="shtf_ammo" data-id="${item.id}" data-type="ammo">✕</button></td>
+        <td><button class="btn btn-danger btn-sm shtf-del-btn" data-table="shtf_ammo" data-id="${item.id}" data-type="ammo" aria-label="Remove item">✕</button></td>
       </tr>`
+
+      container.innerHTML = ammoBarHTML + `
+        <div style="overflow-x:auto;">
+          <table class="data-table">
+            <thead><tr>${headersHTML}</tr></thead>
+            <tbody>${items.map(rowsFn).join('')}</tbody>
+          </table>
+        </div>`
+
+      container.querySelectorAll('.shtf-del-btn').forEach(btn => {
+        btn.addEventListener('click', () => confirmDelete(btn.dataset.table, btn.dataset.id, btn.dataset.type))
+      })
+      return
     } else {
       headersHTML = '<th>Item</th><th>Quantity</th><th>Notes</th><th></th>'
       rowsFn = item => `<tr>
         <td>${Utils.esc(item.item)}</td>
         <td>${Utils.esc(item.quantity || '—')}</td>
         <td>${Utils.esc(item.notes || '—')}</td>
-        <td><button class="btn btn-danger btn-sm shtf-del-btn" data-table="shtf_${type}" data-id="${item.id}" data-type="${type}">✕</button></td>
+        <td><button class="btn btn-danger btn-sm shtf-del-btn" data-table="shtf_${type}" data-id="${item.id}" data-type="${type}" aria-label="Remove item">✕</button></td>
       </tr>`
     }
 
@@ -131,26 +472,72 @@ window.SHTFModule = (() => {
           <thead><tr>${headersHTML}</tr></thead>
           <tbody>${items.map(rowsFn).join('')}</tbody>
         </table>
-      </div>
-    `
+      </div>`
 
     container.querySelectorAll('.shtf-del-btn').forEach(btn => {
-      btn.addEventListener('click', () => deleteItem(btn.dataset.table, btn.dataset.id, btn.dataset.type))
+      btn.addEventListener('click', () => confirmDelete(btn.dataset.table, btn.dataset.id, btn.dataset.type))
     })
   }
 
+  // ── Ammo Inventory Bars ───────────────────────────────────────
+
+  function renderAmmoBars(ammoItems) {
+    if (ammoItems.length === 0) return ''
+
+    const calibers = ammoItems.filter(i => i.quantity != null)
+    if (calibers.length === 0) return ''
+
+    const maxQty = Math.max(...calibers.map(i => i.quantity), 500)
+
+    const bars = calibers.map(item => {
+      const pct   = Math.min(100, Math.round((item.quantity / maxQty) * 100))
+      const color = item.quantity >= 500 ? 'var(--color-green-bright)'
+                  : item.quantity >= 100  ? 'var(--color-amber)'
+                  : 'var(--color-red)'
+      return `
+        <div class="ammo-bar-item">
+          <span class="ammo-bar-caliber">${Utils.esc(item.caliber)}</span>
+          <div class="ammo-bar-track">
+            <div class="ammo-bar-fill" style="width:${pct}%;background-color:${color};"></div>
+          </div>
+          <span style="font-size:0.75rem;color:var(--color-text-muted);white-space:nowrap;">${item.quantity.toLocaleString()} rds</span>
+        </div>`
+    }).join('')
+
+    return `
+      <div class="ammo-bar-list" style="margin-bottom:var(--space-lg);">
+        <div class="section-heading" style="font-size:0.7rem;margin-bottom:var(--space-md);">Inventory at a Glance</div>
+        ${bars}
+      </div>`
+  }
+
+  // ── Delete Handler ────────────────────────────────────────────
+
+  function confirmDelete(tableName, id, type) {
+    Utils.confirmDialog(
+      'Remove this item from your tracker?',
+      () => deleteItem(tableName, id, type),
+      'Remove Item'
+    )
+  }
+
   async function deleteItem(tableName, id, type) {
-    if (!confirm('Remove this item?')) return
     const { error } = await window.sb.from(tableName).delete().eq('id', id)
     if (error) { Utils.showToast('Delete failed: ' + error.message, 'error'); return }
     Utils.showToast('Item removed.')
-    loadedTabs[type] = false
+    // Invalidate caches
+    loadedTabs[type]       = false
+    loadedTabs['overview'] = false
+    delete _dataCache[type]
     loadSubSection(type)
   }
 
-  // ── Prep Plans ─────────────────────────────────────────────
+  // ── Prep Plans ────────────────────────────────────────────────
+
   async function loadPrepPlans() {
     const container = document.getElementById('shtf-prepplans-content')
+    container.innerHTML = Utils.skeletonCards(2)
+
     const { data, error } = await window.sb
       .from('shtf_prep_plans')
       .select('*')
@@ -158,37 +545,64 @@ window.SHTFModule = (() => {
       .order('created_at', { ascending: false })
 
     if (error) { container.innerHTML = '<p class="loading-text">Error loading plans.</p>'; return }
+    _dataCache['prepplans'] = data || []
     renderPrepPlans(data || [], container)
   }
 
   function renderPrepPlans(plans, container) {
     if (plans.length === 0) {
-      container.innerHTML = '<p class="loading-text">No prep plans yet. Add one to get started.</p>'
+      container.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">📋</div>
+          <div class="empty-state-title">No Prep Plans Yet</div>
+          <div class="empty-state-desc">Document your preparedness goals and track their completion status.</div>
+        </div>`
       return
     }
 
-    container.innerHTML = plans.map(plan => `
-      <div class="plan-card" data-priority="${plan.priority}">
-        <div style="flex:1">
-          <div class="plan-card-title">${Utils.esc(plan.title)}</div>
-          ${plan.description ? `<div class="plan-card-desc">${Utils.esc(plan.description)}</div>` : ''}
-          <div class="plan-card-actions">
-            <select class="form-select" style="font-size:0.75rem;padding:2px 6px;width:auto;" data-plan-id="${plan.id}" data-field="status">
-              <option value="pending"     ${plan.status === 'pending'     ? 'selected' : ''}>Pending</option>
-              <option value="in_progress" ${plan.status === 'in_progress' ? 'selected' : ''}>In Progress</option>
-              <option value="complete"    ${plan.status === 'complete'    ? 'selected' : ''}>Complete</option>
-            </select>
+    const complete = plans.filter(p => p.status === 'complete').length
+    const total    = plans.length
+    const pct      = Math.round((complete / total) * 100)
+
+    container.innerHTML = `
+      <div style="margin-bottom:var(--space-lg);">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--space-sm);">
+          <span style="font-family:var(--font-mono);font-size:0.75rem;letter-spacing:0.06em;text-transform:uppercase;color:var(--color-text-muted);">
+            ${complete} of ${total} complete
+          </span>
+          <span style="font-size:0.8rem;color:var(--color-text-primary);">${pct}%</span>
+        </div>
+        <div class="progress-bar-wrap">
+          <div class="progress-bar-track">
+            <div class="progress-bar-fill" style="width:${pct}%;"></div>
           </div>
         </div>
-        <div class="plan-card-badges">
-          ${Utils.priorityBadge(plan.priority)}
-          ${Utils.statusBadge(plan.status)}
-          <button class="btn btn-danger btn-sm shtf-del-btn" data-table="shtf_prep_plans" data-id="${plan.id}" data-type="prepplans">✕</button>
-        </div>
       </div>
-    `).join('')
 
-    // Status update dropdowns
+      ${plans.map(plan => `
+        <div class="plan-card" data-priority="${plan.priority}">
+          <div style="flex:1">
+            <div class="plan-card-title">${Utils.esc(plan.title)}</div>
+            ${plan.description ? `<div class="plan-card-desc">${Utils.esc(plan.description)}</div>` : ''}
+            <div class="plan-card-actions">
+              <select class="form-select" style="font-size:0.75rem;padding:2px 6px;width:auto;" data-plan-id="${plan.id}" aria-label="Plan status">
+                <option value="pending"     ${plan.status === 'pending'     ? 'selected' : ''}>Pending</option>
+                <option value="in_progress" ${plan.status === 'in_progress' ? 'selected' : ''}>In Progress</option>
+                <option value="complete"    ${plan.status === 'complete'    ? 'selected' : ''}>Complete</option>
+              </select>
+            </div>
+          </div>
+          <div class="plan-card-badges">
+            ${Utils.priorityBadge(plan.priority)}
+            ${Utils.statusBadge(plan.status)}
+            <button class="btn btn-danger btn-sm shtf-del-btn"
+              data-table="shtf_prep_plans" data-id="${plan.id}" data-type="prepplans"
+              aria-label="Remove plan">✕</button>
+          </div>
+        </div>
+      `).join('')}
+    `
+
     container.querySelectorAll('select[data-plan-id]').forEach(sel => {
       sel.addEventListener('change', async () => {
         const { error } = await window.sb
@@ -198,67 +612,79 @@ window.SHTFModule = (() => {
         if (error) { Utils.showToast('Update failed', 'error'); return }
         Utils.showToast('Status updated.')
         loadedTabs['prepplans'] = false
+        loadedTabs['overview']  = false
         loadPrepPlans()
       })
     })
 
     container.querySelectorAll('.shtf-del-btn').forEach(btn => {
-      btn.addEventListener('click', () => deleteItem(btn.dataset.table, btn.dataset.id, btn.dataset.type))
+      btn.addEventListener('click', () => confirmDelete(btn.dataset.table, btn.dataset.id, btn.dataset.type))
     })
   }
 
-  // ── Bug-Out Plans ──────────────────────────────────────────
+  // ── Bug-Out Plans ─────────────────────────────────────────────
+
   async function loadBugoutPlans() {
     const container = document.getElementById('shtf-bugout-content')
+    container.innerHTML = Utils.skeletonCards(2)
+
     const { data, error } = await window.sb
       .from('shtf_bugout_plans')
       .select('*')
       .eq('user_id', _userId)
       .order('created_at', { ascending: false })
 
-    if (error) { container.innerHTML = '<p class="loading-text">Error loading bug-out plans.</p>'; return }
+    if (error) { container.innerHTML = '<p class="loading-text">Error loading plans.</p>'; return }
+    _dataCache['bugout'] = data || []
     renderBugoutPlans(data || [], container)
   }
 
   function renderBugoutPlans(plans, container) {
     if (plans.length === 0) {
-      container.innerHTML = '<p class="loading-text">No bug-out plans yet.</p>'
+      container.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">🗺</div>
+          <div class="empty-state-title">No Bug-Out Plans Yet</div>
+          <div class="empty-state-desc">Document your evacuation routes, destinations, and rally points.</div>
+        </div>`
       return
     }
+
     container.innerHTML = plans.map(plan => `
-      <div class="plan-card" data-priority="medium">
-        <div style="flex:1">
-          <div class="plan-card-title">${Utils.esc(plan.title)}</div>
-          ${plan.description ? `<div class="plan-card-desc">${Utils.esc(plan.description)}</div>` : ''}
-          ${plan.route       ? `<div class="plan-card-desc"><strong>Route:</strong> ${Utils.esc(plan.route)}</div>` : ''}
-          ${plan.destination ? `<div class="plan-card-desc"><strong>Destination:</strong> ${Utils.esc(plan.destination)}</div>` : ''}
-          ${plan.notes       ? `<div class="plan-card-desc" style="font-style:italic;">${Utils.esc(plan.notes)}</div>` : ''}
-        </div>
-        <div class="plan-card-badges">
-          <button class="btn btn-danger btn-sm shtf-del-btn" data-table="shtf_bugout_plans" data-id="${plan.id}" data-type="bugout">✕</button>
+      <div class="bugout-card">
+        <div class="bugout-card-title">${Utils.esc(plan.title)}</div>
+        ${plan.description ? `<div class="bugout-card-meta">${Utils.esc(plan.description)}</div>` : ''}
+        ${plan.route       ? `<div class="bugout-card-meta"><strong>Route:</strong> ${Utils.esc(plan.route)}</div>` : ''}
+        ${plan.destination ? `<div class="bugout-card-meta"><strong>Destination:</strong> ${Utils.esc(plan.destination)}</div>` : ''}
+        ${plan.notes       ? `<div class="bugout-card-meta" style="font-style:italic;">${Utils.esc(plan.notes)}</div>` : ''}
+        <div class="bugout-card-actions">
+          <button class="btn btn-danger btn-sm shtf-del-btn"
+            data-table="shtf_bugout_plans" data-id="${plan.id}" data-type="bugout"
+            aria-label="Remove plan">Remove</button>
         </div>
       </div>
     `).join('')
 
     container.querySelectorAll('.shtf-del-btn').forEach(btn => {
-      btn.addEventListener('click', () => deleteItem(btn.dataset.table, btn.dataset.id, btn.dataset.type))
+      btn.addEventListener('click', () => confirmDelete(btn.dataset.table, btn.dataset.id, btn.dataset.type))
     })
   }
 
-  // ── Add Modals ─────────────────────────────────────────────
+  // ── Add Modals ────────────────────────────────────────────────
+
   function openAddModal(type) {
     const forms = {
-      food:     addFoodForm,
-      water:    addSupplyForm('water', 'Water Supply'),
-      medical:  addSupplyForm('medical', 'Medical Item'),
-      gear:     addSupplyForm('gear', 'Gear Item'),
-      ammo:     addAmmoForm,
+      food:      addFoodForm,
+      water:     addSupplyForm('water',   'Water Supply'),
+      medical:   addSupplyForm('medical', 'Medical Item'),
+      gear:      addSupplyForm('gear',    'Gear Item'),
+      ammo:      addAmmoForm,
       prepplans: addPrepPlanForm,
-      bugout:   addBugoutForm,
-      seeds:    addSeedBankForm,
+      bugout:    addBugoutForm,
+      seeds:     addSeedBankForm,
     }
-    const formFn = forms[type]
-    if (formFn) formFn()
+    const fn = forms[type]
+    if (fn) fn()
   }
 
   function addFoodForm() {
@@ -284,19 +710,19 @@ window.SHTFModule = (() => {
         </div>
         <div class="form-actions">
           <button type="button" class="btn btn-secondary" onclick="Utils.closeModal()">Cancel</button>
-          <button type="submit" class="btn btn-primary">Add</button>
+          <button type="submit" class="btn btn-primary">Add Food</button>
         </div>
       </form>
     `)
-    document.getElementById('shtf-form').addEventListener('submit', async (e) => {
+    document.getElementById('shtf-form').addEventListener('submit', async e => {
       e.preventDefault()
       const fd = new FormData(e.target)
       await saveItem('shtf_food', {
-        user_id: _userId,
-        item: fd.get('item').trim(),
-        quantity: fd.get('quantity').trim() || null,
+        user_id:     _userId,
+        item:        fd.get('item').trim(),
+        quantity:    fd.get('quantity').trim() || null,
         expiry_date: fd.get('expiry_date') || null,
-        notes: fd.get('notes').trim() || null,
+        notes:       fd.get('notes').trim() || null,
       }, 'food', e.target)
     })
   }
@@ -319,18 +745,18 @@ window.SHTFModule = (() => {
           </div>
           <div class="form-actions">
             <button type="button" class="btn btn-secondary" onclick="Utils.closeModal()">Cancel</button>
-            <button type="submit" class="btn btn-primary">Add</button>
+            <button type="submit" class="btn btn-primary">Add ${label}</button>
           </div>
         </form>
       `)
-      document.getElementById('shtf-form').addEventListener('submit', async (e) => {
+      document.getElementById('shtf-form').addEventListener('submit', async e => {
         e.preventDefault()
         const fd = new FormData(e.target)
         await saveItem(`shtf_${type}`, {
-          user_id: _userId,
-          item: fd.get('item').trim(),
+          user_id:  _userId,
+          item:     fd.get('item').trim(),
           quantity: fd.get('quantity').trim() || null,
-          notes: fd.get('notes').trim() || null,
+          notes:    fd.get('notes').trim() || null,
         }, type, e.target)
       })
     }
@@ -359,20 +785,20 @@ window.SHTFModule = (() => {
         </div>
         <div class="form-actions">
           <button type="button" class="btn btn-secondary" onclick="Utils.closeModal()">Cancel</button>
-          <button type="submit" class="btn btn-primary">Add</button>
+          <button type="submit" class="btn btn-primary">Add Ammo</button>
         </div>
       </form>
     `)
-    document.getElementById('shtf-form').addEventListener('submit', async (e) => {
+    document.getElementById('shtf-form').addEventListener('submit', async e => {
       e.preventDefault()
-      const fd = new FormData(e.target)
+      const fd  = new FormData(e.target)
       const qty = fd.get('quantity')
       await saveItem('shtf_ammo', {
-        user_id: _userId,
-        caliber: fd.get('caliber').trim(),
+        user_id:  _userId,
+        caliber:  fd.get('caliber').trim(),
         quantity: qty ? parseInt(qty) : null,
-        brand: fd.get('brand').trim() || null,
-        notes: fd.get('notes').trim() || null,
+        brand:    fd.get('brand').trim() || null,
+        notes:    fd.get('notes').trim() || null,
       }, 'ammo', e.target)
     })
   }
@@ -386,7 +812,7 @@ window.SHTFModule = (() => {
         </div>
         <div class="form-group">
           <label class="form-label">Description</label>
-          <textarea name="description" class="form-textarea" placeholder="Details, tasks, milestones..."></textarea>
+          <textarea name="description" class="form-textarea" placeholder="Details, tasks, milestones…"></textarea>
         </div>
         <div class="form-row">
           <div class="form-group">
@@ -413,15 +839,15 @@ window.SHTFModule = (() => {
         </div>
       </form>
     `)
-    document.getElementById('shtf-form').addEventListener('submit', async (e) => {
+    document.getElementById('shtf-form').addEventListener('submit', async e => {
       e.preventDefault()
       const fd = new FormData(e.target)
       await saveItem('shtf_prep_plans', {
-        user_id: _userId,
-        title: fd.get('title').trim(),
+        user_id:     _userId,
+        title:       fd.get('title').trim(),
         description: fd.get('description').trim() || null,
-        priority: fd.get('priority'),
-        status: fd.get('status'),
+        priority:    fd.get('priority'),
+        status:      fd.get('status'),
       }, 'prepplans', e.target)
     })
   }
@@ -435,7 +861,7 @@ window.SHTFModule = (() => {
         </div>
         <div class="form-group">
           <label class="form-label">Description</label>
-          <textarea name="description" class="form-textarea" placeholder="Scenario, trigger conditions, team size..."></textarea>
+          <textarea name="description" class="form-textarea" placeholder="Scenario, trigger conditions, team size…"></textarea>
         </div>
         <div class="form-row">
           <div class="form-group">
@@ -444,7 +870,7 @@ window.SHTFModule = (() => {
           </div>
           <div class="form-group">
             <label class="form-label">Destination</label>
-            <input type="text" name="destination" class="form-input" placeholder="e.g. Family property - Comanche County" maxlength="200" />
+            <input type="text" name="destination" class="form-input" placeholder="e.g. Family property — Comanche County" maxlength="200" />
           </div>
         </div>
         <div class="form-group">
@@ -457,16 +883,16 @@ window.SHTFModule = (() => {
         </div>
       </form>
     `)
-    document.getElementById('shtf-form').addEventListener('submit', async (e) => {
+    document.getElementById('shtf-form').addEventListener('submit', async e => {
       e.preventDefault()
       const fd = new FormData(e.target)
       await saveItem('shtf_bugout_plans', {
-        user_id: _userId,
-        title: fd.get('title').trim(),
+        user_id:     _userId,
+        title:       fd.get('title').trim(),
         description: fd.get('description').trim() || null,
-        route: fd.get('route').trim() || null,
+        route:       fd.get('route').trim()       || null,
         destination: fd.get('destination').trim() || null,
-        notes: fd.get('notes').trim() || null,
+        notes:       fd.get('notes').trim()       || null,
       }, 'bugout', e.target)
     })
   }
@@ -477,7 +903,7 @@ window.SHTFModule = (() => {
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">Seed Name <span style="color:var(--color-red)">*</span></label>
-            <input type="text" name="seed_name" class="form-input" placeholder="e.g. Heirloom Tomato, Black Beans" required maxlength="120" />
+            <input type="text" name="seed_name" class="form-input" placeholder="e.g. Heirloom Tomato" required maxlength="120" />
           </div>
           <div class="form-group">
             <label class="form-label">Type</label>
@@ -520,7 +946,7 @@ window.SHTFModule = (() => {
           <div class="form-group">
             <label class="form-label">Rotate By Date</label>
             <input type="date" name="rotate_by_date" class="form-input" />
-            <small style="color:var(--color-text-muted);font-size:0.7rem;">When seeds should be swapped out for fresh stock</small>
+            <small style="color:var(--color-text-muted);font-size:0.7rem;">When seeds should be swapped for fresh stock</small>
           </div>
           <div class="form-group">
             <label class="form-label">Germination Rate %</label>
@@ -529,11 +955,11 @@ window.SHTFModule = (() => {
         </div>
         <div class="form-group">
           <label class="form-label">Storage Method</label>
-          <input type="text" name="storage_method" class="form-input" placeholder="e.g. Vacuum sealed, cool/dark, mylar bag, freezer" maxlength="120" />
+          <input type="text" name="storage_method" class="form-input" placeholder="e.g. Vacuum sealed, mylar bag, freezer" maxlength="120" />
         </div>
         <div class="form-group">
           <label class="form-label">Notes</label>
-          <textarea name="notes" class="form-textarea" placeholder="Growing notes, planting depth, days to maturity, location, etc."></textarea>
+          <textarea name="notes" class="form-textarea" placeholder="Growing notes, days to maturity, location, etc."></textarea>
         </div>
         <div class="form-actions">
           <button type="button" class="btn btn-secondary" onclick="Utils.closeModal()">Cancel</button>
@@ -541,11 +967,11 @@ window.SHTFModule = (() => {
         </div>
       </form>
     `)
-    document.getElementById('shtf-form').addEventListener('submit', async (e) => {
+    document.getElementById('shtf-form').addEventListener('submit', async e => {
       e.preventDefault()
-      const fd = new FormData(e.target)
-      const harvestYr = fd.get('harvest_year')
-      const germRate  = fd.get('germination_rate')
+      const fd         = new FormData(e.target)
+      const harvestYr  = fd.get('harvest_year')
+      const germRate   = fd.get('germination_rate')
       await saveItem('shtf_seeds', {
         user_id:          _userId,
         seed_name:        fd.get('seed_name').trim(),
@@ -564,17 +990,21 @@ window.SHTFModule = (() => {
 
   async function saveItem(tableName, payload, type, form) {
     const btn = form.querySelector('[type=submit]')
-    btn.disabled = true; btn.textContent = 'Saving...'
+    const originalText = btn.textContent
+    btn.disabled = true; btn.textContent = 'Saving…'
 
     const { error } = await window.sb.from(tableName).insert(payload)
     if (error) {
       Utils.showToast('Save failed: ' + error.message, 'error')
-      btn.disabled = false; btn.textContent = 'Add'
+      btn.disabled = false; btn.textContent = originalText
       return
     }
     Utils.closeModal()
     Utils.showToast('Saved!')
-    loadedTabs[type] = false
+    // Invalidate both the specific tab and overview
+    loadedTabs[type]       = false
+    loadedTabs['overview'] = false
+    delete _dataCache[type]
     loadSubSection(type)
   }
 

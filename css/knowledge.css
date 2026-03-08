@@ -18,6 +18,33 @@
   background: none;
   cursor: pointer;
   transition: all var(--transition);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  min-height: 32px;
+}
+
+.kc-filter-btn:focus-visible {
+  outline: 2px solid var(--color-amber);
+  outline-offset: 2px;
+}
+
+/* Count badge inside filter button */
+.kc-filter-count {
+  font-size: 0.6rem;
+  background-color: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 0 5px;
+  min-width: 18px;
+  text-align: center;
+  color: var(--color-text-dim);
+}
+
+.kc-filter-btn.active .kc-filter-count {
+  background-color: rgba(196, 154, 60, 0.2);
+  border-color: var(--color-amber);
+  color: var(--color-amber);
 }
 
 .kc-filter-btn:hover {
@@ -116,11 +143,32 @@
   font-size: 0.6rem;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  padding: 1px 6px;
+  padding: 2px 8px;
   background-color: var(--color-bg-elevated);
   border: 1px solid var(--color-border);
   border-radius: 20px;
   color: var(--color-text-muted);
+  cursor: pointer;
+  transition: all var(--transition);
+  min-height: 24px;
+}
+
+.kc-tag:hover {
+  border-color: var(--color-amber);
+  color: var(--color-amber);
+  background-color: var(--color-bg-elevated);
+}
+
+.kc-tag.active {
+  background-color: var(--color-amber-dark);
+  border-color: var(--color-amber);
+  color: var(--color-amber);
+  font-weight: 700;
+}
+
+.kc-tag:focus-visible {
+  outline: 2px solid var(--color-amber);
+  outline-offset: 2px;
 }
 
 /* ── Category Badge Colors for KC ────────────────────────── */
@@ -141,6 +189,23 @@
   font-family: var(--font-mono);
   font-size: 0.8rem;
   letter-spacing: 0.06em;
+}
+
+/* ── Focus indicator on kc-item action buttons ────────────── */
+.kc-item .btn:focus-visible {
+  outline: 2px solid var(--color-amber);
+  outline-offset: 2px;
+}
+
+/* ── Mobile: stack filter buttons ────────────────────────── */
+@media (max-width: 500px) {
+  .kc-filters {
+    gap: var(--space-xs);
+  }
+  .kc-filter-btn {
+    font-size: 0.65rem;
+    padding: var(--space-xs) var(--space-sm);
+  }
 }
 
 @media (max-width: 600px) {

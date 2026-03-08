@@ -4,120 +4,141 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Operator Profile — LastStandLog</title>
-  <link rel="stylesheet" href="/css/reset.css?v=2" />
-  <link rel="stylesheet" href="/css/theme.css?v=2" />
-  <link rel="stylesheet" href="/css/layout.css?v=2" />
-  <link rel="stylesheet" href="/css/components.css?v=2" />
-  <link rel="stylesheet" href="/css/profile.css?v=2" />
+  <link rel="stylesheet" href="/css/reset.css?v=3" />
+  <link rel="stylesheet" href="/css/theme.css?v=3" />
+  <link rel="stylesheet" href="/css/layout.css?v=3" />
+  <link rel="stylesheet" href="/css/components.css?v=3" />
+  <link rel="stylesheet" href="/css/profile.css?v=3" />
 </head>
 <body>
 
   <header class="site-header">
-    <a href="/index.html" class="back-btn" title="Back to home">&#8592;</a>
+    <a href="/index.html" class="back-btn" title="Back to home" aria-label="Back to home">&#8592;</a>
     <div class="header-brand">
       <span class="site-title">LastStandLog</span>
+      <span class="site-subtitle" id="site-subtitle"></span>
     </div>
   </header>
 
   <!-- Profile identity bar -->
   <div class="profile-header">
-    <div class="profile-avatar" id="profile-avatar">?</div>
+    <div class="profile-avatar" id="profile-avatar" aria-hidden="true">?</div>
     <div class="profile-info">
       <div class="profile-label">Operator</div>
-      <div class="profile-name" id="profile-name">Loading...</div>
+      <div id="profile-name-row" class="profile-name-row">
+        <span id="profile-name" class="profile-name">Loading...</span>
+        <button id="profile-edit-name-btn" class="profile-edit-btn" title="Edit name" aria-label="Edit operator name">✎</button>
+      </div>
+      <div id="profile-stats-row" class="profile-stats-row"></div>
+    </div>
+    <div class="profile-header-actions-wrap">
+      <div class="profile-header-actions">
+        <button id="profile-menu-btn" class="profile-menu-btn" title="Operator options" aria-label="Operator options">⋯</button>
+      </div>
     </div>
   </div>
 
   <!-- Section tabs -->
-  <nav class="profile-tabs">
-    <button class="tab-btn" data-tab="loadout">Loadout</button>
-    <button class="tab-btn" data-tab="rangelog">Range Log</button>
-    <button class="tab-btn" data-tab="shtf">SHTF Tracker</button>
+  <nav class="profile-tabs" role="tablist" aria-label="Profile sections">
+    <button class="tab-btn" data-tab="loadout" role="tab" aria-selected="false" aria-controls="tab-loadout">Loadout</button>
+    <button class="tab-btn" data-tab="rangelog" role="tab" aria-selected="false" aria-controls="tab-rangelog">Range Log</button>
+    <button class="tab-btn" data-tab="shtf" role="tab" aria-selected="false" aria-controls="tab-shtf">SHTF Tracker</button>
   </nav>
 
   <main class="main-content">
 
     <!-- ── LOADOUT TAB ─────────────────────────────────────── -->
-    <section id="tab-loadout" class="tab-section">
+    <section id="tab-loadout" class="tab-section" role="tabpanel" aria-labelledby="tab-loadout-btn">
       <div class="toolbar">
         <span class="toolbar-title">Loadout</span>
-        <button class="btn btn-primary" id="loadout-add-btn">+ Add Item</button>
+        <div class="toolbar-actions">
+          <button class="btn btn-secondary btn-sm" id="loadout-print-btn" title="Print loadout">🖨 Print</button>
+          <button class="btn btn-primary" id="loadout-add-btn">+ Add Item</button>
+        </div>
       </div>
-      <div id="loadout-content">
-        <p class="loading-text">Loading loadout...</p>
-      </div>
+      <div id="loadout-content"></div>
     </section>
 
     <!-- ── RANGE LOG TAB ───────────────────────────────────── -->
-    <section id="tab-rangelog" class="tab-section">
+    <section id="tab-rangelog" class="tab-section" role="tabpanel" aria-labelledby="tab-rangelog-btn">
       <div class="toolbar">
         <span class="toolbar-title">Range Log</span>
-        <button class="btn btn-primary" id="rangelog-add-btn">+ New Session</button>
+        <div class="toolbar-actions">
+          <button class="btn btn-secondary btn-sm" id="rangelog-export-btn" title="Export to CSV">↓ CSV</button>
+          <button class="btn btn-primary" id="rangelog-add-btn">+ New Session</button>
+        </div>
       </div>
-      <div id="rangelog-content">
-        <p class="loading-text">Loading range log...</p>
-      </div>
+      <div id="rangelog-stats"></div>
+      <div id="rangelog-content"></div>
     </section>
 
     <!-- ── SHTF TRACKER TAB ────────────────────────────────── -->
-    <section id="tab-shtf" class="tab-section">
+    <section id="tab-shtf" class="tab-section" role="tabpanel" aria-labelledby="tab-shtf-btn">
       <div class="toolbar">
         <span class="toolbar-title">SHTF Tracker</span>
       </div>
 
-      <nav class="shtf-tabs">
-        <button class="shtf-tab-btn" data-shtf="food">Food</button>
-        <button class="shtf-tab-btn" data-shtf="water">Water</button>
-        <button class="shtf-tab-btn" data-shtf="medical">Medical</button>
-        <button class="shtf-tab-btn" data-shtf="gear">Gear</button>
-        <button class="shtf-tab-btn" data-shtf="ammo">Ammo</button>
-        <button class="shtf-tab-btn" data-shtf="prepplans">Prep Plans</button>
-        <button class="shtf-tab-btn" data-shtf="bugout">Bug-Out Plans</button>
-        <button class="shtf-tab-btn" data-shtf="seeds">Seed Bank</button>
+      <div id="shtf-alerts"></div>
+
+      <nav class="shtf-tabs" role="tablist" aria-label="SHTF categories">
+        <button class="shtf-tab-btn" data-shtf="overview" role="tab" aria-selected="false">Overview</button>
+        <button class="shtf-tab-btn" data-shtf="food"     role="tab" aria-selected="false">Food</button>
+        <button class="shtf-tab-btn" data-shtf="water"    role="tab" aria-selected="false">Water</button>
+        <button class="shtf-tab-btn" data-shtf="medical"  role="tab" aria-selected="false">Medical</button>
+        <button class="shtf-tab-btn" data-shtf="gear"     role="tab" aria-selected="false">Gear</button>
+        <button class="shtf-tab-btn" data-shtf="ammo"     role="tab" aria-selected="false">Ammo</button>
+        <button class="shtf-tab-btn" data-shtf="prepplans" role="tab" aria-selected="false">Prep Plans</button>
+        <button class="shtf-tab-btn" data-shtf="bugout"   role="tab" aria-selected="false">Bug-Out Plans</button>
+        <button class="shtf-tab-btn" data-shtf="seeds"    role="tab" aria-selected="false">Seed Bank</button>
       </nav>
 
-      <div id="shtf-food"     class="shtf-subsection">
+      <div id="shtf-overview" class="shtf-subsection"></div>
+
+      <div id="shtf-food" class="shtf-subsection">
         <div class="toolbar"><span></span><button class="btn btn-primary shtf-add-btn" data-type="food">+ Add Food</button></div>
-        <div id="shtf-food-content"><p class="loading-text">Loading...</p></div>
+        <div id="shtf-food-content"></div>
       </div>
-      <div id="shtf-water"    class="shtf-subsection">
+      <div id="shtf-water" class="shtf-subsection">
         <div class="toolbar"><span></span><button class="btn btn-primary shtf-add-btn" data-type="water">+ Add Water</button></div>
-        <div id="shtf-water-content"><p class="loading-text">Loading...</p></div>
+        <div id="shtf-water-content"></div>
       </div>
-      <div id="shtf-medical"  class="shtf-subsection">
+      <div id="shtf-medical" class="shtf-subsection">
         <div class="toolbar"><span></span><button class="btn btn-primary shtf-add-btn" data-type="medical">+ Add Medical</button></div>
-        <div id="shtf-medical-content"><p class="loading-text">Loading...</p></div>
+        <div id="shtf-medical-content"></div>
       </div>
-      <div id="shtf-gear"     class="shtf-subsection">
+      <div id="shtf-gear" class="shtf-subsection">
         <div class="toolbar"><span></span><button class="btn btn-primary shtf-add-btn" data-type="gear">+ Add Gear</button></div>
-        <div id="shtf-gear-content"><p class="loading-text">Loading...</p></div>
+        <div id="shtf-gear-content"></div>
       </div>
-      <div id="shtf-ammo"     class="shtf-subsection">
+      <div id="shtf-ammo" class="shtf-subsection">
         <div class="toolbar"><span></span><button class="btn btn-primary shtf-add-btn" data-type="ammo">+ Add Ammo</button></div>
-        <div id="shtf-ammo-content"><p class="loading-text">Loading...</p></div>
+        <div id="shtf-ammo-content"></div>
       </div>
       <div id="shtf-prepplans" class="shtf-subsection">
         <div class="toolbar"><span></span><button class="btn btn-primary shtf-add-btn" data-type="prepplans">+ Add Plan</button></div>
-        <div id="shtf-prepplans-content"><p class="loading-text">Loading...</p></div>
+        <div id="shtf-prepplans-content"></div>
       </div>
-      <div id="shtf-bugout"   class="shtf-subsection">
+      <div id="shtf-bugout" class="shtf-subsection">
         <div class="toolbar"><span></span><button class="btn btn-primary shtf-add-btn" data-type="bugout">+ Add Bug-Out Plan</button></div>
-        <div id="shtf-bugout-content"><p class="loading-text">Loading...</p></div>
+        <div id="shtf-bugout-content"></div>
       </div>
       <div id="shtf-seeds" class="shtf-subsection">
         <div class="toolbar"><span></span><button class="btn btn-primary shtf-add-btn" data-type="seeds">+ Add Seeds</button></div>
-        <div id="shtf-seeds-content"><p class="loading-text">Loading...</p></div>
+        <div id="shtf-seeds-content"></div>
       </div>
     </section>
 
   </main>
 
+  <!-- Back to top -->
+  <button id="back-to-top" class="back-to-top" aria-label="Back to top" title="Back to top">↑</button>
+
   <!-- Shared Modal -->
-  <div id="modal-overlay" class="modal-overlay hidden">
+  <div id="modal-overlay" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="modal-title" aria-hidden="true">
     <div class="modal">
       <div class="modal-header">
         <span class="modal-title" id="modal-title">Add Item</span>
-        <button class="modal-close" aria-label="Close">&times;</button>
+        <button class="modal-close" aria-label="Close dialog">&times;</button>
       </div>
       <div class="modal-body" id="modal-body"></div>
     </div>
@@ -126,11 +147,11 @@
   <div id="toast-container"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="/js/supabase-client.js?v=2"></script>
-  <script src="/js/utils.js?v=2"></script>
-  <script src="/js/loadout.js?v=2"></script>
-  <script src="/js/range-log.js?v=2"></script>
-  <script src="/js/shtf.js?v=2"></script>
-  <script src="/js/profile.js?v=2"></script>
+  <script src="/js/supabase-client.js?v=3"></script>
+  <script src="/js/utils.js?v=3"></script>
+  <script src="/js/loadout.js?v=3"></script>
+  <script src="/js/range-log.js?v=3"></script>
+  <script src="/js/shtf.js?v=3"></script>
+  <script src="/js/profile.js?v=3"></script>
 </body>
 </html>

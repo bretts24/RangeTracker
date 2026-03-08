@@ -107,6 +107,22 @@
   border-color: var(--color-amber);
 }
 
+/* ── Tile last-active label ───────────────────────────────── */
+.tile-last-active {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-dim);
+  margin-top: auto;
+}
+
+/* ── Keyboard focus on tiles ─────────────────────────────── */
+.tile:focus-visible {
+  outline: 2px solid var(--color-green-bright);
+  outline-offset: 2px;
+}
+
 /* ── Divider ──────────────────────────────────────────────── */
 .tile-divider {
   grid-column: 1 / -1;

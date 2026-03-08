@@ -11,8 +11,8 @@
 
   /* Text */
   --color-text-primary: #d4cfc8;
-  --color-text-muted:   #7a8a80;
-  --color-text-dim:     #4a5a50;
+  --color-text-muted:   #8fa89a;   /* was #7a8a80 — bumped to ~4.6:1 on bg-deep */
+  --color-text-dim:     #5a6e60;   /* was #4a5a50 — bumped for better readability */
 
   /* Accent Colors */
   --color-green:        #4a7c59;
@@ -23,6 +23,7 @@
   --color-red:          #8b3a3a;
   --color-red-dark:     #5c2525;
   --color-blue:         #2a4a6a;
+  --color-blue-bright:  #4a7aaa;
 
   /* Typography */
   --font-mono:   'Courier New', Courier, monospace;
@@ -46,4 +47,5 @@
 
   /* Transitions */
   --transition: 150ms ease;
+  --transition-slow: 300ms ease;
 }
