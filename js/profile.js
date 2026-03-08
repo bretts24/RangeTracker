@@ -12,7 +12,7 @@
   // ── Load user ──────────────────────────────────────────────
   const { data: user, error } = await window.sb
     .from('users')
-    .select('id, name, color')
+    .select('id, name')
     .eq('id', userId)
     .single()
 
@@ -30,8 +30,7 @@
 
   profileNameEl.textContent = user.name
   profileAvatarEl.textContent = user.name.charAt(0).toUpperCase()
-  if (user.color) profileAvatarEl.dataset.color = user.color
-  if (siteSubtitleEl) siteSubtitleEl.textContent = user.name
+if (siteSubtitleEl) siteSubtitleEl.textContent = user.name
 
   // ── Profile stats row (populated after loadout loads) ─────
   function updateProfileStats(weapons, attachments, gear) {
