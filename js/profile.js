@@ -14,11 +14,12 @@
     .from('users')
     .select('id, name')
     .eq('id', userId)
-    .single()
+    .maybeSingle()
 
   if (error || !user) {
-    Utils.showToast('Operator not found.', 'error')
-    setTimeout(() => { window.location.href = '/index.html' }, 1500)
+    const msg = error ? error.message + ' [' + error.code + ']' : 'userId=' + userId + ' not found'
+    Utils.showToast(msg, 'error')
+    setTimeout(() => { window.location.href = '/index.html' }, 5000)
     return
   }
 
