@@ -4,6 +4,7 @@ window.RangeLogModule = (() => {
   let _initialized = false
   let _sessions = []
   let _loadoutWeapons = []
+  let _ammoStock = []
   let _searchQuery = ''
   let _dateFilter = 'all'
 
@@ -23,7 +24,7 @@ window.RangeLogModule = (() => {
     // Show skeleton immediately
     document.getElementById('rangelog-content').innerHTML = Utils.skeletonCards(3)
 
-    await Promise.all([loadSessions(), loadLoadoutWeapons()])
+    await Promise.all([loadSessions(), loadLoadoutWeapons(), loadAmmoStock()])
   }
 
   async function loadLoadoutWeapons() {
@@ -35,6 +36,15 @@ window.RangeLogModule = (() => {
       .in('category', weaponCategories)
       .order('created_at', { ascending: true })
     _loadoutWeapons = data || []
+  }
+
+  async function loadAmmoStock() {
+    const { data } = await window.sb
+      .from('shtf_ammo')
+      .select('id, caliber, brand, quantity')
+      .eq('user_id', _userId)
+      .order('caliber')
+    _ammoStock = data || []
   }
 
   async function loadSessions() {
@@ -376,6 +386,40 @@ window.RangeLogModule = (() => {
     `
   }
 
+  // ── Ammo Picker ──────────────────────────────────────────────
+
+  function buildAmmoPickerHTML(sid, selectedAmmoId = '', caliberValue = '') {
+    if (_ammoStock.length === 0) {
+      return `
+        <input type="text" name="caliber" id="ep-ammo-text-${sid}"
+          class="form-input" placeholder="e.g. 5.56 M193, 9mm 124gr" maxlength="80"
+          value="${Utils.esc(caliberValue)}" />
+        <input type="hidden" id="ep-ammo-id-${sid}" name="shtf_ammo_id" value="" />
+      `
+    }
+
+    const ammoOptions = _ammoStock.map(a => {
+      const qty   = a.quantity != null ? `${a.quantity.toLocaleString()} rds` : '? rds'
+      const brand = a.brand ? ` — ${Utils.esc(a.brand)}` : ''
+      const sel   = selectedAmmoId === a.id ? 'selected' : ''
+      return `<option value="${a.id}" data-caliber="${Utils.esc(a.caliber)}" ${sel}>${Utils.esc(a.caliber)}${brand}  (${qty})</option>`
+    }).join('')
+
+    const isManual = !selectedAmmoId && caliberValue
+    return `
+      <select id="ep-ammo-select-${sid}" class="form-select">
+        <option value="" ${!selectedAmmoId && !caliberValue ? 'selected' : ''}>— Select from Stockpile —</option>
+        ${ammoOptions}
+        <option value="__manual__" ${isManual ? 'selected' : ''}>✏ Enter Manually</option>
+      </select>
+      <input type="text" id="ep-ammo-text-${sid}" name="caliber"
+        class="form-input" placeholder="e.g. 5.56 M193, 9mm 124gr" maxlength="80"
+        value="${Utils.esc(caliberValue)}"
+        style="margin-top:6px;${(selectedAmmoId || !caliberValue) ? 'display:none;' : ''}" />
+      <input type="hidden" id="ep-ammo-id-${sid}" name="shtf_ammo_id" value="${Utils.esc(selectedAmmoId || '')}" />
+    `
+  }
+
   // ── Inline Entry Form ────────────────────────────────────────
 
   function buildInlineEntryFormHTML(sid) {
@@ -388,8 +432,8 @@ window.RangeLogModule = (() => {
             <div>${buildWeaponPickerHTML(sid)}</div>
           </div>
           <div class="form-group">
-            <label class="form-label">Caliber / Ammo Type</label>
-            <input type="text" name="caliber" class="form-input" placeholder="e.g. 5.56 M193, 9mm 124gr" maxlength="80" />
+            <label class="form-label">Ammo / Caliber</label>
+            <div>${buildAmmoPickerHTML(sid)}</div>
           </div>
         </div>
         <div class="form-row-3">
@@ -528,6 +572,30 @@ window.RangeLogModule = (() => {
       })
     }
 
+    const ammoSelect = document.getElementById(`ep-ammo-select-${sid}`)
+    if (ammoSelect) {
+      const ammoText = document.getElementById(`ep-ammo-text-${sid}`)
+      const ammoIdEl = document.getElementById(`ep-ammo-id-${sid}`)
+      ammoSelect.addEventListener('change', () => {
+        const val = ammoSelect.value
+        if (val === '__manual__') {
+          ammoText.style.display = ''
+          ammoText.value = ''
+          ammoText.focus()
+          ammoIdEl.value = ''
+        } else if (val === '') {
+          ammoText.style.display = 'none'
+          ammoText.value = ''
+          ammoIdEl.value = ''
+        } else {
+          const opt = ammoSelect.selectedOptions[0]
+          ammoText.style.display = 'none'
+          ammoText.value = opt.dataset.caliber || ''
+          ammoIdEl.value = val
+        }
+      })
+    }
+
     const form = document.getElementById(`inline-entry-form-${sid}`)
     if (!form) return
 
@@ -545,12 +613,23 @@ window.RangeLogModule = (() => {
         if (match) weaponUsed = match.name
       }
 
+      // Resolve caliber: if stockpile item selected, pull caliber from it
+      const shtfAmmoId = fd.get('shtf_ammo_id') || null
+      let caliber = fd.get('caliber')?.trim() || null
+      if (shtfAmmoId && !caliber) {
+        const stock = _ammoStock.find(a => a.id === shtfAmmoId)
+        if (stock) caliber = stock.caliber
+      }
+
+      const roundsFired = toInt(fd.get('rounds_fired'))
+
       const payload = {
         session_id: sid,
         weapon_used: weaponUsed,
         loadout_item_id: loadoutItemId,
-        caliber: fd.get('caliber').trim() || null,
-        rounds_fired: toInt(fd.get('rounds_fired')),
+        shtf_ammo_id: shtfAmmoId,
+        caliber,
+        rounds_fired: roundsFired,
         distance_value: toNum(fd.get('distance_value')),
         distance_unit: fd.get('distance_unit') || 'yards',
         hits: toInt(fd.get('hits')),
@@ -570,8 +649,20 @@ window.RangeLogModule = (() => {
         return
       }
 
+      // Deduct rounds from ammo stockpile if linked
+      if (shtfAmmoId && roundsFired > 0) {
+        const stock = _ammoStock.find(a => a.id === shtfAmmoId)
+        if (stock) {
+          const newQty = Math.max(0, (stock.quantity ?? 0) - roundsFired)
+          await window.sb.from('shtf_ammo').update({ quantity: newQty }).eq('id', shtfAmmoId)
+          stock.quantity = newQty
+        }
+      }
+
       Utils.showToast('Entry added!')
       form.reset()
+
+      // Reset weapon selector
       const wSel = document.getElementById(`ep-weapon-select-${sid}`)
       if (wSel) {
         wSel.value = ''
@@ -580,6 +671,17 @@ window.RangeLogModule = (() => {
         if (wText) { wText.style.display = 'none'; wText.value = '' }
         if (ldId)  ldId.value = ''
       }
+
+      // Reset ammo selector
+      const aSel = document.getElementById(`ep-ammo-select-${sid}`)
+      if (aSel) {
+        aSel.value = ''
+        const aText = document.getElementById(`ep-ammo-text-${sid}`)
+        const aId   = document.getElementById(`ep-ammo-id-${sid}`)
+        if (aText) { aText.style.display = 'none'; aText.value = '' }
+        if (aId)   aId.value = ''
+      }
+
       btn.disabled = false; btn.textContent = 'Add Entry'
 
       await loadEntries(sid)
@@ -630,7 +732,7 @@ window.RangeLogModule = (() => {
       btn.addEventListener('click', () => {
         Utils.confirmDialog(
           'Remove this range entry?',
-          () => deleteEntry(btn.dataset.id, btn.dataset.sessionId),
+          () => deleteEntry(btn.dataset.id, btn.dataset.sessionId, btn.dataset.ammoId || null, parseInt(btn.dataset.rounds) || 0),
           'Remove Entry'
         )
       })
@@ -673,6 +775,8 @@ window.RangeLogModule = (() => {
               aria-label="Edit entry">Edit</button>
             <button class="btn btn-danger btn-sm delete-entry-btn"
               data-id="${entry.id}" data-session-id="${sessionId}"
+              data-ammo-id="${entry.shtf_ammo_id || ''}"
+              data-rounds="${entry.rounds_fired || 0}"
               aria-label="Remove entry">✕</button>
           </div>
         </div>
@@ -792,9 +896,8 @@ window.RangeLogModule = (() => {
             <div>${weaponOptions}</div>
           </div>
           <div class="form-group">
-            <label class="form-label">Caliber / Ammo Type</label>
-            <input type="text" name="caliber" class="form-input"
-              value="${Utils.esc(entry.caliber || '')}" maxlength="80" />
+            <label class="form-label">Ammo / Caliber</label>
+            <div>${buildAmmoPickerHTML('edit', entry.shtf_ammo_id || '', entry.caliber || '')}</div>
           </div>
         </div>
         <div class="form-row-3">
@@ -884,6 +987,31 @@ window.RangeLogModule = (() => {
       })
     }
 
+    // Wire ammo picker
+    const ammoSelect = document.getElementById('ep-ammo-select-edit')
+    if (ammoSelect) {
+      ammoSelect.addEventListener('change', () => {
+        const val    = ammoSelect.value
+        const textEl = document.getElementById('ep-ammo-text-edit')
+        const idEl   = document.getElementById('ep-ammo-id-edit')
+        if (val === '__manual__') {
+          textEl.style.display = ''
+          textEl.value = ''
+          textEl.focus()
+          idEl.value = ''
+        } else if (val === '') {
+          textEl.style.display = 'none'
+          textEl.value = ''
+          idEl.value = ''
+        } else {
+          const opt = ammoSelect.selectedOptions[0]
+          textEl.style.display = 'none'
+          textEl.value = opt.dataset.caliber || ''
+          idEl.value = val
+        }
+      })
+    }
+
     document.getElementById('edit-entry-form').addEventListener('submit', async e => {
       e.preventDefault()
       const fd  = new FormData(e.target)
@@ -900,13 +1028,26 @@ window.RangeLogModule = (() => {
         if (match) weaponUsed = match.name
       }
 
+      const newAmmoId  = fd.get('shtf_ammo_id') || null
+      const newRounds  = toInt(fd.get('rounds_fired'))
+      const origAmmoId = entry.shtf_ammo_id || null
+      const origRounds = entry.rounds_fired || 0
+
+      // Resolve caliber from stockpile if needed
+      let caliber = fd.get('caliber')?.trim() || null
+      if (newAmmoId && !caliber) {
+        const stock = _ammoStock.find(a => a.id === newAmmoId)
+        if (stock) caliber = stock.caliber
+      }
+
       const { error } = await window.sb
         .from('range_entries')
         .update({
           weapon_used:     weaponUsed,
           loadout_item_id: loadoutItemId,
-          caliber:         fd.get('caliber').trim()      || null,
-          rounds_fired:    toInt(fd.get('rounds_fired')),
+          shtf_ammo_id:    newAmmoId,
+          caliber,
+          rounds_fired:    newRounds,
           distance_value:  toNum(fd.get('distance_value')),
           distance_unit:   fd.get('distance_unit') || 'yards',
           hits:            toInt(fd.get('hits')),
@@ -922,6 +1063,30 @@ window.RangeLogModule = (() => {
         btn.disabled = false; btn.textContent = 'Save Changes'
         return
       }
+
+      // Adjust ammo inventory if ammo link or rounds changed
+      const sameAmmo   = origAmmoId === newAmmoId
+      const sameRounds = origRounds === (newRounds || 0)
+      if (!sameAmmo || !sameRounds) {
+        // Restore original deduction
+        if (origAmmoId && origRounds > 0) {
+          const stock = _ammoStock.find(a => a.id === origAmmoId)
+          if (stock) {
+            stock.quantity = (stock.quantity ?? 0) + origRounds
+            await window.sb.from('shtf_ammo').update({ quantity: stock.quantity }).eq('id', origAmmoId)
+          }
+        }
+        // Apply new deduction
+        if (newAmmoId && (newRounds || 0) > 0) {
+          const stock = _ammoStock.find(a => a.id === newAmmoId)
+          if (stock) {
+            const newQty = Math.max(0, (stock.quantity ?? 0) - (newRounds || 0))
+            stock.quantity = newQty
+            await window.sb.from('shtf_ammo').update({ quantity: newQty }).eq('id', newAmmoId)
+          }
+        }
+      }
+
       Utils.closeModal()
       Utils.showToast('Entry updated.')
       await loadEntries(sessionId)
@@ -938,7 +1103,15 @@ window.RangeLogModule = (() => {
     await loadSessions()
   }
 
-  async function deleteEntry(id, sessionId) {
+  async function deleteEntry(id, sessionId, ammoId, rounds) {
+    // Restore rounds to ammo inventory if this entry was linked
+    if (ammoId && rounds > 0) {
+      const stock = _ammoStock.find(a => a.id === ammoId)
+      if (stock) {
+        stock.quantity = (stock.quantity ?? 0) + rounds
+        await window.sb.from('shtf_ammo').update({ quantity: stock.quantity }).eq('id', ammoId)
+      }
+    }
     const { error } = await window.sb.from('range_entries').delete().eq('id', id)
     if (error) { Utils.showToast('Delete failed: ' + error.message, 'error'); return }
     Utils.showToast('Entry removed.')
