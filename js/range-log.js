@@ -1,3 +1,11 @@
+// Auto-calc misses = rounds_fired - hits (called from inline form oninput)
+window.rlAutoMisses = function (sid) {
+  const rf = parseFloat(document.getElementById(`rl-rf-${sid}`)?.value) || 0
+  const h  = parseFloat(document.getElementById(`rl-h-${sid}`)?.value)  || 0
+  const m  = document.getElementById(`rl-m-${sid}`)
+  if (m) m.value = Math.max(0, rf - h)
+}
+
 // Range Log Module
 window.RangeLogModule = (() => {
   let _userId = null
@@ -439,7 +447,7 @@ window.RangeLogModule = (() => {
         <div class="form-row-3">
           <div class="form-group">
             <label class="form-label">Rounds Fired</label>
-            <input type="number" name="rounds_fired" class="form-input" placeholder="0" min="0" />
+            <input type="number" name="rounds_fired" id="rl-rf-${sid}" class="form-input" placeholder="0" min="0" oninput="window.rlAutoMisses('${sid}')" />
           </div>
           <div class="form-group">
             <label class="form-label">Distance</label>
@@ -457,11 +465,11 @@ window.RangeLogModule = (() => {
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">Shots on Target (Hits)</label>
-            <input type="number" name="hits" class="form-input" placeholder="0" min="0" />
+            <input type="number" name="hits" id="rl-h-${sid}" class="form-input" placeholder="0" min="0" oninput="window.rlAutoMisses('${sid}')" />
           </div>
           <div class="form-group">
-            <label class="form-label">Misses</label>
-            <input type="number" name="misses" class="form-input" placeholder="0" min="0" />
+            <label class="form-label">Misses <span style="font-size:0.7em;color:var(--color-text-muted);font-weight:normal;">(auto)</span></label>
+            <input type="number" name="misses" id="rl-m-${sid}" class="form-input" placeholder="—" min="0" readonly style="opacity:0.75;cursor:default;" />
           </div>
         </div>
         <div class="form-row">

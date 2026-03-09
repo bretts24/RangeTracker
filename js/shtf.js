@@ -6,6 +6,7 @@ window.SHTFModule = (() => {
   let _searchQuery = ''
   const loadedTabs = {}
   const _dataCache = {}   // { type: items[] } populated as tabs load
+  const _sortState = {}   // { type: { col, dir } }
 
   const CATEGORY_META = {
     food:     { label: 'Food',        icon: '🥫', table: 'shtf_food' },
@@ -188,44 +189,79 @@ window.SHTFModule = (() => {
     const alertsEl = document.getElementById('shtf-alerts')
     if (!alertsEl) return
 
-    const now = new Date()
-    const in30 = new Date(now)
-    in30.setDate(in30.getDate() + 30)
-    const in30Str = in30.toISOString().split('T')[0]
+    const now    = new Date()
+    const in15   = new Date(now); in15.setDate(in15.getDate() + 15)
     const todayStr = now.toISOString().split('T')[0]
+    const in15Str  = in15.toISOString().split('T')[0]
 
-    const [foodRes, seedsRes] = await Promise.all([
+    const [foodRes, waterRes, seedsRes] = await Promise.all([
       window.sb.from('shtf_food').select('item, expiry_date').eq('user_id', _userId).not('expiry_date', 'is', null),
+      window.sb.from('shtf_water').select('item, rotate_date').eq('user_id', _userId).not('rotate_date', 'is', null),
       window.sb.from('shtf_seeds').select('seed_name, rotate_by_date').eq('user_id', _userId).not('rotate_by_date', 'is', null),
     ])
 
-    const expiredFood    = (foodRes.data  || []).filter(i => i.expiry_date    < todayStr)
-    const expiringFood   = (foodRes.data  || []).filter(i => i.expiry_date   >= todayStr && i.expiry_date <= in30Str)
-    const expiredSeeds   = (seedsRes.data || []).filter(i => i.rotate_by_date < todayStr)
-    const expiringSeeds  = (seedsRes.data || []).filter(i => i.rotate_by_date >= todayStr && i.rotate_by_date <= in30Str)
+    const expired  = []
+    const expiring = []
 
-    const expiredCount  = expiredFood.length + expiredSeeds.length
-    const expiringCount = expiringFood.length + expiringSeeds.length
+    ;(foodRes.data || []).forEach(i => {
+      const e = { name: i.item, tab: 'food', date: i.expiry_date }
+      if (i.expiry_date < todayStr) expired.push(e)
+      else if (i.expiry_date <= in15Str) expiring.push(e)
+    })
+    ;(waterRes.data || []).forEach(i => {
+      const e = { name: i.item, tab: 'water', date: i.rotate_date }
+      if (i.rotate_date < todayStr) expired.push(e)
+      else if (i.rotate_date <= in15Str) expiring.push(e)
+    })
+    ;(seedsRes.data || []).forEach(i => {
+      const e = { name: i.seed_name, tab: 'seeds', date: i.rotate_by_date }
+      if (i.rotate_by_date < todayStr) expired.push(e)
+      else if (i.rotate_by_date <= in15Str) expiring.push(e)
+    })
 
-    if (expiredCount === 0 && expiringCount === 0) {
+    if (expired.length === 0 && expiring.length === 0) {
       alertsEl.innerHTML = ''
       return
     }
 
-    const parts = []
-    if (expiredCount > 0)  parts.push(`${expiredCount} item${expiredCount > 1 ? 's' : ''} expired`)
-    if (expiringCount > 0) parts.push(`${expiringCount} item${expiringCount > 1 ? 's' : ''} expiring within 30 days`)
+    const TAB_TAG = { food: 'Food', water: 'Water', seeds: 'Seeds' }
+    const fmtDate = d => {
+      const [, mo, da] = d.split('-')
+      return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][parseInt(mo) - 1] + ' ' + parseInt(da)
+    }
+    const chipsHTML = (items, cls) => items.map(i =>
+      `<span class="expiry-chip ${cls}" data-tab="${i.tab}" title="Go to ${TAB_TAG[i.tab]}">${Utils.esc(i.name)} · ${TAB_TAG[i.tab]} · ${fmtDate(i.date)}</span>`
+    ).join('')
 
-    const isRed = expiredCount > 0
+    let html = ''
+    if (expired.length > 0) {
+      html += `
+        <div class="alert-banner alert-red" role="alert">
+          <div class="alert-banner-row">
+            <span>✕ EXPIRED — ${expired.length} item${expired.length > 1 ? 's' : ''} past date</span>
+            <button class="alert-banner-dismiss" aria-label="Dismiss">×</button>
+          </div>
+          <div class="expiry-chip-list">${chipsHTML(expired, 'expiry-chip-red')}</div>
+        </div>`
+    }
+    if (expiring.length > 0) {
+      html += `
+        <div class="alert-banner" role="alert">
+          <div class="alert-banner-row">
+            <span>⚠ EXPIRING SOON — ${expiring.length} item${expiring.length > 1 ? 's' : ''} within 15 days</span>
+            <button class="alert-banner-dismiss" aria-label="Dismiss">×</button>
+          </div>
+          <div class="expiry-chip-list">${chipsHTML(expiring, 'expiry-chip-amber')}</div>
+        </div>`
+    }
 
-    alertsEl.innerHTML = `
-      <div class="alert-banner${isRed ? ' alert-red' : ''}" role="alert">
-        <span>⚠ ${parts.join(' · ')} — check Food and Seed Bank tabs</span>
-        <button class="alert-banner-dismiss" aria-label="Dismiss alert">✕</button>
-      </div>
-    `
-    alertsEl.querySelector('.alert-banner-dismiss').addEventListener('click', () => {
-      alertsEl.innerHTML = ''
+    alertsEl.innerHTML = html
+
+    alertsEl.querySelectorAll('.alert-banner-dismiss').forEach(btn => {
+      btn.addEventListener('click', () => btn.closest('.alert-banner').remove())
+    })
+    alertsEl.querySelectorAll('.expiry-chip[data-tab]').forEach(chip => {
+      chip.addEventListener('click', () => activateSubTab(chip.dataset.tab))
     })
   }
 
@@ -383,6 +419,52 @@ window.SHTFModule = (() => {
 
   // ── Simple Supply Tables ──────────────────────────────────────
 
+  // ── Sort Helpers ─────────────────────────────────────────────
+
+  // Columns eligible for clicking-to-sort, keyed by type
+  const TABLE_SORT_COLS = {
+    food:    ['item','quantity','expiry_date','notes'],
+    water:   ['item','quantity','rotate_date','notes'],
+    medical: ['item','quantity','notes'],
+    gear:    ['item','quantity','notes'],
+    ammo:    ['caliber','quantity','brand','notes'],
+    seeds:   ['seed_name','seed_type','variety','rotate_by_date','harvest_year'],
+  }
+
+  function sortItems(type, items) {
+    const state = _sortState[type]
+    if (!state) return items
+    const { col, dir } = state
+    return [...items].sort((a, b) => {
+      let va = a[col] ?? '', vb = b[col] ?? ''
+      // Numeric quantity (integers in ammo)
+      if (col === 'quantity' && typeof a[col] === 'number') {
+        return dir === 'asc' ? (va - vb) : (vb - va)
+      }
+      // Empty values always sort to end
+      if (!va && vb) return 1
+      if (va && !vb) return -1
+      const cmp = String(va).localeCompare(String(vb), undefined, { numeric: true, sensitivity: 'base' })
+      return dir === 'asc' ? cmp : -cmp
+    })
+  }
+
+  function mkTh(type, col, label) {
+    const state    = _sortState[type]
+    const isActive = state && state.col === col
+    const arrow    = isActive ? (state.dir === 'asc' ? ' ↑' : ' ↓') : ''
+    return `<th class="th-sort${isActive ? ' th-sort-active' : ''}" data-sort-type="${type}" data-sort-col="${col}">${label}${arrow}</th>`
+  }
+
+  // cols: array of [fieldKey, displayLabel] — pass null key for the actions column
+  function mkHeaders(type, cols) {
+    const sortable = TABLE_SORT_COLS[type] || []
+    return cols.map(([col, label]) => {
+      if (col === null) return '<th></th>'
+      return sortable.includes(col) ? mkTh(type, col, label) : `<th>${label}</th>`
+    }).join('')
+  }
+
   function renderSimpleTable(type, items, container) {
     const meta = CATEGORY_META[type]
     const icon = meta ? meta.icon : '📦'
@@ -398,6 +480,7 @@ window.SHTFModule = (() => {
       return
     }
 
+    const displayItems = sortItems(type, items)
     let headersHTML = ''
     let rowsFn = null
 
@@ -408,7 +491,7 @@ window.SHTFModule = (() => {
       </div>`
 
     if (type === 'food') {
-      headersHTML = '<th>Item</th><th>Quantity</th><th>Expiry Date</th><th>Notes</th><th></th>'
+      headersHTML = mkHeaders(type, [['item','Item'],['quantity','Quantity'],['expiry_date','Expiry Date'],['notes','Notes'],[null,'']])
       rowsFn = item => {
         const expClass = Utils.getExpiryClass(item.expiry_date)
         return `<tr>
@@ -419,8 +502,25 @@ window.SHTFModule = (() => {
           <td>${actionBtns('shtf_food', item.id, 'food')}</td>
         </tr>`
       }
+    } else if (type === 'water') {
+      headersHTML = mkHeaders(type, [['item','Item'],['quantity','Quantity'],['rotate_date','Rotate Date'],['notes','Notes'],[null,'']])
+      rowsFn = item => {
+        const rotClass = Utils.getExpiryClass(item.rotate_date)
+        return `<tr>
+          <td>${Utils.esc(item.item)}</td>
+          <td>${Utils.esc(item.quantity || '—')}</td>
+          <td class="${rotClass}">${item.rotate_date ? Utils.formatDateShort(item.rotate_date) : '—'}</td>
+          <td>${Utils.esc(item.notes || '—')}</td>
+          <td>${actionBtns('shtf_water', item.id, 'water')}</td>
+        </tr>`
+      }
     } else if (type === 'seeds') {
-      headersHTML = '<th>Seed</th><th>Type</th><th>Variety</th><th>Heirloom</th><th>Qty</th><th>Yr</th><th>Rotate By</th><th>Storage</th><th>Germ %</th><th>Notes</th><th></th>'
+      headersHTML = mkHeaders(type, [
+        ['seed_name','Seed'],['seed_type','Type'],['variety','Variety'],
+        ['heirloom','Heirloom'],['quantity','Qty'],['harvest_year','Yr'],
+        ['rotate_by_date','Rotate By'],['storage_method','Storage'],
+        ['germination_rate','Germ %'],['notes','Notes'],[null,''],
+      ])
       rowsFn = item => {
         const rotClass = Utils.getExpiryClass(item.rotate_by_date)
         return `<tr>
@@ -438,10 +538,8 @@ window.SHTFModule = (() => {
         </tr>`
       }
     } else if (type === 'ammo') {
-      // Ammo visual bars above table
       const ammoBarHTML = renderAmmoBars(items)
-
-      headersHTML = '<th>Caliber</th><th>Qty (rds)</th><th>Brand</th><th>Notes</th><th></th>'
+      headersHTML = mkHeaders(type, [['caliber','Caliber'],['quantity','Qty (rds)'],['brand','Brand'],['notes','Notes'],[null,'']])
       rowsFn = item => `<tr>
         <td>${Utils.esc(item.caliber)}</td>
         <td>${item.quantity != null ? item.quantity.toLocaleString() : '—'}</td>
@@ -449,19 +547,17 @@ window.SHTFModule = (() => {
         <td>${Utils.esc(item.notes || '—')}</td>
         <td>${actionBtns('shtf_ammo', item.id, 'ammo')}</td>
       </tr>`
-
       container.innerHTML = ammoBarHTML + `
         <div style="overflow-x:auto;">
           <table class="data-table">
             <thead><tr>${headersHTML}</tr></thead>
-            <tbody>${items.map(rowsFn).join('')}</tbody>
+            <tbody>${displayItems.map(rowsFn).join('')}</tbody>
           </table>
         </div>`
-
       bindTableActionBtns(container, type)
       return
     } else {
-      headersHTML = '<th>Item</th><th>Quantity</th><th>Notes</th><th></th>'
+      headersHTML = mkHeaders(type, [['item','Item'],['quantity','Quantity'],['notes','Notes'],[null,'']])
       rowsFn = item => `<tr>
         <td>${Utils.esc(item.item)}</td>
         <td>${Utils.esc(item.quantity || '—')}</td>
@@ -474,7 +570,7 @@ window.SHTFModule = (() => {
       <div style="overflow-x:auto;">
         <table class="data-table">
           <thead><tr>${headersHTML}</tr></thead>
-          <tbody>${items.map(rowsFn).join('')}</tbody>
+          <tbody>${displayItems.map(rowsFn).join('')}</tbody>
         </table>
       </div>`
 
@@ -497,7 +593,7 @@ window.SHTFModule = (() => {
     const entries = Object.entries(totals)
     if (entries.length === 0) return ''
 
-    const maxQty = Math.max(...entries.map(([, qty]) => qty), 500)
+    const maxQty = Math.max(...entries.map(([, qty]) => qty), 1000)
 
     const bars = entries.map(([caliber, total]) => {
       const pct   = Math.min(100, Math.round((total / maxQty) * 100))
@@ -527,6 +623,20 @@ window.SHTFModule = (() => {
     })
     container.querySelectorAll('.shtf-del-btn').forEach(btn => {
       btn.addEventListener('click', () => confirmDelete(btn.dataset.table, btn.dataset.id, btn.dataset.type))
+    })
+    bindSortHeaders(container, type)
+  }
+
+  function bindSortHeaders(container, type) {
+    container.querySelectorAll('.th-sort[data-sort-col]').forEach(th => {
+      th.addEventListener('click', () => {
+        const col = th.dataset.sortCol
+        const cur = _sortState[type]
+        _sortState[type] = (cur && cur.col === col)
+          ? { col, dir: cur.dir === 'asc' ? 'desc' : 'asc' }
+          : { col, dir: 'asc' }
+        renderSimpleTable(type, _dataCache[type] || [], container)
+      })
     })
   }
 
@@ -710,7 +820,7 @@ window.SHTFModule = (() => {
 
     const editFns = {
       food:      () => editFoodModal(item),
-      water:     () => editSupplyModal('water',   'Water Supply',  item),
+      water:     () => editWaterModal(item),
       medical:   () => editSupplyModal('medical', 'Medical Item',  item),
       gear:      () => editSupplyModal('gear',    'Gear Item',     item),
       ammo:      () => editAmmoModal(item),
@@ -761,6 +871,50 @@ window.SHTFModule = (() => {
       if (error) { Utils.showToast('Save failed: ' + error.message, 'error'); btn.disabled = false; btn.textContent = 'Save Changes'; return }
       Utils.closeModal(); Utils.showToast('Updated!')
       invalidateAndReload('food')
+    })
+  }
+
+  function editWaterModal(item) {
+    Utils.openModal('Edit Water Supply', `
+      <form id="shtf-edit-form">
+        <div class="form-group">
+          <label class="form-label">Item <span style="color:var(--color-red)">*</span></label>
+          <input type="text" name="item" class="form-input" value="${Utils.esc(item.item)}" required maxlength="100" />
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Quantity</label>
+            <input type="text" name="quantity" class="form-input" value="${Utils.esc(item.quantity || '')}" maxlength="60" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Rotate Date</label>
+            <input type="date" name="rotate_date" class="form-input" value="${Utils.esc(item.rotate_date || '')}" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Notes</label>
+          <textarea name="notes" class="form-textarea">${Utils.esc(item.notes || '')}</textarea>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="Utils.closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="shtf-edit-submit">Save Changes</button>
+        </div>
+      </form>
+    `)
+    document.getElementById('shtf-edit-form').addEventListener('submit', async e => {
+      e.preventDefault()
+      const fd  = new FormData(e.target)
+      const btn = document.getElementById('shtf-edit-submit')
+      btn.disabled = true; btn.textContent = 'Saving…'
+      const { error } = await window.sb.from('shtf_water').update({
+        item:        fd.get('item').trim(),
+        quantity:    fd.get('quantity').trim() || null,
+        rotate_date: fd.get('rotate_date') || null,
+        notes:       fd.get('notes').trim() || null,
+      }).eq('id', item.id)
+      if (error) { Utils.showToast('Save failed: ' + error.message, 'error'); btn.disabled = false; btn.textContent = 'Save Changes'; return }
+      Utils.closeModal(); Utils.showToast('Updated!')
+      invalidateAndReload('water')
     })
   }
 
@@ -1042,7 +1196,7 @@ window.SHTFModule = (() => {
   function openAddModal(type) {
     const forms = {
       food:      addFoodForm,
-      water:     addSupplyForm('water',   'Water Supply'),
+      water:     addWaterForm,
       medical:   addSupplyForm('medical', 'Medical Item'),
       gear:      addSupplyForm('gear',    'Gear Item'),
       ammo:      addAmmoForm,
@@ -1091,6 +1245,46 @@ window.SHTFModule = (() => {
         expiry_date: fd.get('expiry_date') || null,
         notes:       fd.get('notes').trim() || null,
       }, 'food', e.target)
+    })
+  }
+
+  function addWaterForm() {
+    Utils.openModal('Add Water Supply', `
+      <form id="shtf-form">
+        <div class="form-group">
+          <label class="form-label">Item <span style="color:var(--color-red)">*</span></label>
+          <input type="text" name="item" class="form-input" placeholder="e.g. Bottled water, water filter, barrel" required maxlength="100" />
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Quantity</label>
+            <input type="text" name="quantity" class="form-input" placeholder="e.g. 10 gallons, 24 bottles" maxlength="60" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Rotate Date</label>
+            <input type="date" name="rotate_date" class="form-input" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Notes</label>
+          <textarea name="notes" class="form-textarea" placeholder="Storage location, purification method, etc."></textarea>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="Utils.closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Add Water</button>
+        </div>
+      </form>
+    `)
+    document.getElementById('shtf-form').addEventListener('submit', async e => {
+      e.preventDefault()
+      const fd = new FormData(e.target)
+      await saveItem('shtf_water', {
+        user_id:     _userId,
+        item:        fd.get('item').trim(),
+        quantity:    fd.get('quantity').trim() || null,
+        rotate_date: fd.get('rotate_date') || null,
+        notes:       fd.get('notes').trim() || null,
+      }, 'water', e.target)
     })
   }
 

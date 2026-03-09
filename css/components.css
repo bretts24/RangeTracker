@@ -861,8 +861,8 @@
 /* ── Alert Banner ─────────────────────────────────────────── */
 .alert-banner {
   display: flex;
-  align-items: center;
-  gap: var(--space-sm);
+  flex-direction: column;
+  gap: var(--space-xs);
   padding: var(--space-sm) var(--space-md);
   background-color: var(--color-amber-dark);
   border: 1px solid var(--color-amber);
@@ -873,6 +873,12 @@
   font-family: var(--font-mono);
   color: var(--color-amber);
   letter-spacing: 0.04em;
+}
+
+.alert-banner-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
 }
 
 .alert-banner-dismiss {
@@ -897,6 +903,41 @@
 }
 
 .alert-banner.alert-red .alert-banner-dismiss { color: #e08080; }
+
+/* Expiry item chips inside alert banners */
+.expiry-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.expiry-chip {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.68rem;
+  cursor: pointer;
+  transition: opacity var(--transition);
+}
+.expiry-chip:hover { opacity: 0.75; }
+.expiry-chip-red {
+  background-color: rgba(180, 40, 40, 0.2);
+  border: 1px solid var(--color-red);
+  color: #e08080;
+}
+.expiry-chip-amber {
+  background-color: rgba(160, 110, 20, 0.2);
+  border: 1px solid var(--color-amber);
+  color: var(--color-amber);
+}
+
+/* ── Sortable table headers ───────────────────────────────── */
+.th-sort {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.th-sort:hover { color: var(--color-green-bright); }
+.th-sort.th-sort-active { color: var(--color-green-bright); }
 
 /* ── Ammo Bar (SHTF ammo inventory) ──────────────────────── */
 .ammo-bar-list {
