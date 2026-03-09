@@ -401,6 +401,12 @@ window.SHTFModule = (() => {
     let headersHTML = ''
     let rowsFn = null
 
+    const actionBtns = (tableName, id, itemType) => `
+      <div style="display:flex;gap:4px;white-space:nowrap;">
+        <button class="btn btn-secondary btn-sm shtf-edit-btn" data-type="${itemType}" data-id="${id}" aria-label="Edit item">Edit</button>
+        <button class="btn btn-danger btn-sm shtf-del-btn" data-table="${tableName}" data-id="${id}" data-type="${itemType}" aria-label="Remove item">✕</button>
+      </div>`
+
     if (type === 'food') {
       headersHTML = '<th>Item</th><th>Quantity</th><th>Expiry Date</th><th>Notes</th><th></th>'
       rowsFn = item => {
@@ -410,7 +416,7 @@ window.SHTFModule = (() => {
           <td>${Utils.esc(item.quantity || '—')}</td>
           <td class="${expClass}">${item.expiry_date ? Utils.formatDateShort(item.expiry_date) : '—'}</td>
           <td>${Utils.esc(item.notes || '—')}</td>
-          <td><button class="btn btn-danger btn-sm shtf-del-btn" data-table="shtf_food" data-id="${item.id}" data-type="food" aria-label="Remove item">✕</button></td>
+          <td>${actionBtns('shtf_food', item.id, 'food')}</td>
         </tr>`
       }
     } else if (type === 'seeds') {
@@ -428,7 +434,7 @@ window.SHTFModule = (() => {
           <td>${Utils.esc(item.storage_method || '—')}</td>
           <td>${item.germination_rate != null ? item.germination_rate + '%' : '—'}</td>
           <td>${Utils.esc(item.notes || '—')}</td>
-          <td><button class="btn btn-danger btn-sm shtf-del-btn" data-table="shtf_seeds" data-id="${item.id}" data-type="seeds" aria-label="Remove item">✕</button></td>
+          <td>${actionBtns('shtf_seeds', item.id, 'seeds')}</td>
         </tr>`
       }
     } else if (type === 'ammo') {
@@ -441,7 +447,7 @@ window.SHTFModule = (() => {
         <td>${item.quantity != null ? item.quantity.toLocaleString() : '—'}</td>
         <td>${Utils.esc(item.brand || '—')}</td>
         <td>${Utils.esc(item.notes || '—')}</td>
-        <td><button class="btn btn-danger btn-sm shtf-del-btn" data-table="shtf_ammo" data-id="${item.id}" data-type="ammo" aria-label="Remove item">✕</button></td>
+        <td>${actionBtns('shtf_ammo', item.id, 'ammo')}</td>
       </tr>`
 
       container.innerHTML = ammoBarHTML + `
@@ -452,9 +458,7 @@ window.SHTFModule = (() => {
           </table>
         </div>`
 
-      container.querySelectorAll('.shtf-del-btn').forEach(btn => {
-        btn.addEventListener('click', () => confirmDelete(btn.dataset.table, btn.dataset.id, btn.dataset.type))
-      })
+      bindTableActionBtns(container, type)
       return
     } else {
       headersHTML = '<th>Item</th><th>Quantity</th><th>Notes</th><th></th>'
@@ -462,7 +466,7 @@ window.SHTFModule = (() => {
         <td>${Utils.esc(item.item)}</td>
         <td>${Utils.esc(item.quantity || '—')}</td>
         <td>${Utils.esc(item.notes || '—')}</td>
-        <td><button class="btn btn-danger btn-sm shtf-del-btn" data-table="shtf_${type}" data-id="${item.id}" data-type="${type}" aria-label="Remove item">✕</button></td>
+        <td>${actionBtns('shtf_' + type, item.id, type)}</td>
       </tr>`
     }
 
@@ -474,9 +478,7 @@ window.SHTFModule = (() => {
         </table>
       </div>`
 
-    container.querySelectorAll('.shtf-del-btn').forEach(btn => {
-      btn.addEventListener('click', () => confirmDelete(btn.dataset.table, btn.dataset.id, btn.dataset.type))
-    })
+    bindTableActionBtns(container, type)
   }
 
   // ── Ammo Inventory Bars ───────────────────────────────────────
@@ -509,6 +511,15 @@ window.SHTFModule = (() => {
         <div class="section-heading" style="font-size:0.7rem;margin-bottom:var(--space-md);">Inventory at a Glance</div>
         ${bars}
       </div>`
+  }
+
+  function bindTableActionBtns(container, type) {
+    container.querySelectorAll('.shtf-edit-btn').forEach(btn => {
+      btn.addEventListener('click', () => openEditModal(btn.dataset.type, btn.dataset.id))
+    })
+    container.querySelectorAll('.shtf-del-btn').forEach(btn => {
+      btn.addEventListener('click', () => confirmDelete(btn.dataset.table, btn.dataset.id, btn.dataset.type))
+    })
   }
 
   // ── Delete Handler ────────────────────────────────────────────
@@ -595,6 +606,9 @@ window.SHTFModule = (() => {
           <div class="plan-card-badges">
             ${Utils.priorityBadge(plan.priority)}
             ${Utils.statusBadge(plan.status)}
+            <button class="btn btn-secondary btn-sm shtf-edit-btn"
+              data-type="prepplans" data-id="${plan.id}"
+              aria-label="Edit plan">Edit</button>
             <button class="btn btn-danger btn-sm shtf-del-btn"
               data-table="shtf_prep_plans" data-id="${plan.id}" data-type="prepplans"
               aria-label="Remove plan">✕</button>
@@ -617,6 +631,9 @@ window.SHTFModule = (() => {
       })
     })
 
+    container.querySelectorAll('.shtf-edit-btn').forEach(btn => {
+      btn.addEventListener('click', () => openEditModal(btn.dataset.type, btn.dataset.id))
+    })
     container.querySelectorAll('.shtf-del-btn').forEach(btn => {
       btn.addEventListener('click', () => confirmDelete(btn.dataset.table, btn.dataset.id, btn.dataset.type))
     })
@@ -658,6 +675,9 @@ window.SHTFModule = (() => {
         ${plan.destination ? `<div class="bugout-card-meta"><strong>Destination:</strong> ${Utils.esc(plan.destination)}</div>` : ''}
         ${plan.notes       ? `<div class="bugout-card-meta" style="font-style:italic;">${Utils.esc(plan.notes)}</div>` : ''}
         <div class="bugout-card-actions">
+          <button class="btn btn-secondary btn-sm shtf-edit-btn"
+            data-type="bugout" data-id="${plan.id}"
+            aria-label="Edit plan">Edit</button>
           <button class="btn btn-danger btn-sm shtf-del-btn"
             data-table="shtf_bugout_plans" data-id="${plan.id}" data-type="bugout"
             aria-label="Remove plan">Remove</button>
@@ -665,9 +685,345 @@ window.SHTFModule = (() => {
       </div>
     `).join('')
 
+    container.querySelectorAll('.shtf-edit-btn').forEach(btn => {
+      btn.addEventListener('click', () => openEditModal(btn.dataset.type, btn.dataset.id))
+    })
     container.querySelectorAll('.shtf-del-btn').forEach(btn => {
       btn.addEventListener('click', () => confirmDelete(btn.dataset.table, btn.dataset.id, btn.dataset.type))
     })
+  }
+
+  // ── Edit Modal Dispatcher ─────────────────────────────────────
+
+  function openEditModal(type, id) {
+    const items = _dataCache[type] || []
+    const item  = items.find(i => String(i.id) === String(id))
+    if (!item) { Utils.showToast('Could not find item.', 'error'); return }
+
+    const editFns = {
+      food:      () => editFoodModal(item),
+      water:     () => editSupplyModal('water',   'Water Supply',  item),
+      medical:   () => editSupplyModal('medical', 'Medical Item',  item),
+      gear:      () => editSupplyModal('gear',    'Gear Item',     item),
+      ammo:      () => editAmmoModal(item),
+      seeds:     () => editSeedsModal(item),
+      prepplans: () => editPrepPlanModal(item),
+      bugout:    () => editBugoutModal(item),
+    }
+    const fn = editFns[type]
+    if (fn) fn()
+  }
+
+  function editFoodModal(item) {
+    Utils.openModal('Edit Food Item', `
+      <form id="shtf-edit-form">
+        <div class="form-group">
+          <label class="form-label">Item <span style="color:var(--color-red)">*</span></label>
+          <input type="text" name="item" class="form-input" value="${Utils.esc(item.item)}" required maxlength="100" />
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Quantity</label>
+            <input type="text" name="quantity" class="form-input" value="${Utils.esc(item.quantity || '')}" maxlength="60" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Expiry Date</label>
+            <input type="date" name="expiry_date" class="form-input" value="${Utils.esc(item.expiry_date || '')}" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Notes</label>
+          <textarea name="notes" class="form-textarea">${Utils.esc(item.notes || '')}</textarea>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="Utils.closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="shtf-edit-submit">Save Changes</button>
+        </div>
+      </form>
+    `)
+    document.getElementById('shtf-edit-form').addEventListener('submit', async e => {
+      e.preventDefault()
+      const fd  = new FormData(e.target)
+      const btn = document.getElementById('shtf-edit-submit')
+      btn.disabled = true; btn.textContent = 'Saving…'
+      const { error } = await window.sb.from('shtf_food').update({
+        item: fd.get('item').trim(), quantity: fd.get('quantity').trim() || null,
+        expiry_date: fd.get('expiry_date') || null, notes: fd.get('notes').trim() || null,
+      }).eq('id', item.id)
+      if (error) { Utils.showToast('Save failed: ' + error.message, 'error'); btn.disabled = false; btn.textContent = 'Save Changes'; return }
+      Utils.closeModal(); Utils.showToast('Updated!')
+      invalidateAndReload('food')
+    })
+  }
+
+  function editSupplyModal(type, label, item) {
+    Utils.openModal(`Edit ${label}`, `
+      <form id="shtf-edit-form">
+        <div class="form-group">
+          <label class="form-label">Item <span style="color:var(--color-red)">*</span></label>
+          <input type="text" name="item" class="form-input" value="${Utils.esc(item.item)}" required maxlength="100" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Quantity</label>
+          <input type="text" name="quantity" class="form-input" value="${Utils.esc(item.quantity || '')}" maxlength="60" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Notes</label>
+          <textarea name="notes" class="form-textarea">${Utils.esc(item.notes || '')}</textarea>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="Utils.closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="shtf-edit-submit">Save Changes</button>
+        </div>
+      </form>
+    `)
+    document.getElementById('shtf-edit-form').addEventListener('submit', async e => {
+      e.preventDefault()
+      const fd  = new FormData(e.target)
+      const btn = document.getElementById('shtf-edit-submit')
+      btn.disabled = true; btn.textContent = 'Saving…'
+      const { error } = await window.sb.from(`shtf_${type}`).update({
+        item: fd.get('item').trim(), quantity: fd.get('quantity').trim() || null,
+        notes: fd.get('notes').trim() || null,
+      }).eq('id', item.id)
+      if (error) { Utils.showToast('Save failed: ' + error.message, 'error'); btn.disabled = false; btn.textContent = 'Save Changes'; return }
+      Utils.closeModal(); Utils.showToast('Updated!')
+      invalidateAndReload(type)
+    })
+  }
+
+  function editAmmoModal(item) {
+    Utils.openModal('Edit Ammo', `
+      <form id="shtf-edit-form">
+        <div class="form-group">
+          <label class="form-label">Caliber <span style="color:var(--color-red)">*</span></label>
+          <input type="text" name="caliber" class="form-input" value="${Utils.esc(item.caliber)}" required maxlength="60" />
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Quantity (rounds)</label>
+            <input type="number" name="quantity" class="form-input" value="${item.quantity ?? ''}" min="0" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Brand / Manufacturer</label>
+            <input type="text" name="brand" class="form-input" value="${Utils.esc(item.brand || '')}" maxlength="80" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Notes</label>
+          <textarea name="notes" class="form-textarea">${Utils.esc(item.notes || '')}</textarea>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="Utils.closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="shtf-edit-submit">Save Changes</button>
+        </div>
+      </form>
+    `)
+    document.getElementById('shtf-edit-form').addEventListener('submit', async e => {
+      e.preventDefault()
+      const fd  = new FormData(e.target)
+      const btn = document.getElementById('shtf-edit-submit')
+      btn.disabled = true; btn.textContent = 'Saving…'
+      const qty = fd.get('quantity')
+      const { error } = await window.sb.from('shtf_ammo').update({
+        caliber: fd.get('caliber').trim(), quantity: qty ? parseInt(qty) : null,
+        brand: fd.get('brand').trim() || null, notes: fd.get('notes').trim() || null,
+      }).eq('id', item.id)
+      if (error) { Utils.showToast('Save failed: ' + error.message, 'error'); btn.disabled = false; btn.textContent = 'Save Changes'; return }
+      Utils.closeModal(); Utils.showToast('Updated!')
+      invalidateAndReload('ammo')
+    })
+  }
+
+  function editSeedsModal(item) {
+    Utils.openModal('Edit Seed Bank Entry', `
+      <form id="shtf-edit-form">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Seed Name <span style="color:var(--color-red)">*</span></label>
+            <input type="text" name="seed_name" class="form-input" value="${Utils.esc(item.seed_name)}" required maxlength="120" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Type</label>
+            <select name="seed_type" class="form-select">
+              <option value="">— Select —</option>
+              ${['Vegetable','Fruit','Herb','Grain','Legume','Flower','Other'].map(t =>
+                `<option value="${t}" ${item.seed_type === t ? 'selected' : ''}>${t}</option>`
+              ).join('')}
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Variety</label>
+            <input type="text" name="variety" class="form-input" value="${Utils.esc(item.variety || '')}" maxlength="100" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Heirloom / Hybrid</label>
+            <select name="heirloom" class="form-select">
+              <option value="true"  ${item.heirloom ? 'selected' : ''}>Heirloom</option>
+              <option value="false" ${!item.heirloom ? 'selected' : ''}>Hybrid</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Quantity</label>
+            <input type="text" name="quantity" class="form-input" value="${Utils.esc(item.quantity || '')}" maxlength="60" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Harvest / Pack Year</label>
+            <input type="number" name="harvest_year" class="form-input" value="${item.harvest_year || ''}" min="2000" max="2100" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Rotate By Date</label>
+            <input type="date" name="rotate_by_date" class="form-input" value="${Utils.esc(item.rotate_by_date || '')}" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Germination Rate %</label>
+            <input type="number" name="germination_rate" class="form-input" value="${item.germination_rate ?? ''}" min="0" max="100" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Storage Method</label>
+          <input type="text" name="storage_method" class="form-input" value="${Utils.esc(item.storage_method || '')}" maxlength="120" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Notes</label>
+          <textarea name="notes" class="form-textarea">${Utils.esc(item.notes || '')}</textarea>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="Utils.closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="shtf-edit-submit">Save Changes</button>
+        </div>
+      </form>
+    `)
+    document.getElementById('shtf-edit-form').addEventListener('submit', async e => {
+      e.preventDefault()
+      const fd  = new FormData(e.target)
+      const btn = document.getElementById('shtf-edit-submit')
+      btn.disabled = true; btn.textContent = 'Saving…'
+      const harvestYr = fd.get('harvest_year')
+      const germRate  = fd.get('germination_rate')
+      const { error } = await window.sb.from('shtf_seeds').update({
+        seed_name: fd.get('seed_name').trim(), seed_type: fd.get('seed_type') || null,
+        variety: fd.get('variety').trim() || null, heirloom: fd.get('heirloom') === 'true',
+        quantity: fd.get('quantity').trim() || null, harvest_year: harvestYr ? parseInt(harvestYr) : null,
+        rotate_by_date: fd.get('rotate_by_date') || null,
+        germination_rate: germRate ? parseInt(germRate) : null,
+        storage_method: fd.get('storage_method').trim() || null,
+        notes: fd.get('notes').trim() || null,
+      }).eq('id', item.id)
+      if (error) { Utils.showToast('Save failed: ' + error.message, 'error'); btn.disabled = false; btn.textContent = 'Save Changes'; return }
+      Utils.closeModal(); Utils.showToast('Updated!')
+      invalidateAndReload('seeds')
+    })
+  }
+
+  function editPrepPlanModal(item) {
+    Utils.openModal('Edit Prep Plan', `
+      <form id="shtf-edit-form">
+        <div class="form-group">
+          <label class="form-label">Title <span style="color:var(--color-red)">*</span></label>
+          <input type="text" name="title" class="form-input" value="${Utils.esc(item.title)}" required maxlength="150" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Description</label>
+          <textarea name="description" class="form-textarea">${Utils.esc(item.description || '')}</textarea>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Priority</label>
+            <select name="priority" class="form-select">
+              ${['low','medium','high','critical'].map(p =>
+                `<option value="${p}" ${item.priority === p ? 'selected' : ''}>${p.charAt(0).toUpperCase() + p.slice(1)}</option>`
+              ).join('')}
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Status</label>
+            <select name="status" class="form-select">
+              <option value="pending"     ${item.status === 'pending'     ? 'selected' : ''}>Pending</option>
+              <option value="in_progress" ${item.status === 'in_progress' ? 'selected' : ''}>In Progress</option>
+              <option value="complete"    ${item.status === 'complete'    ? 'selected' : ''}>Complete</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="Utils.closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="shtf-edit-submit">Save Changes</button>
+        </div>
+      </form>
+    `)
+    document.getElementById('shtf-edit-form').addEventListener('submit', async e => {
+      e.preventDefault()
+      const fd  = new FormData(e.target)
+      const btn = document.getElementById('shtf-edit-submit')
+      btn.disabled = true; btn.textContent = 'Saving…'
+      const { error } = await window.sb.from('shtf_prep_plans').update({
+        title: fd.get('title').trim(), description: fd.get('description').trim() || null,
+        priority: fd.get('priority'), status: fd.get('status'),
+      }).eq('id', item.id)
+      if (error) { Utils.showToast('Save failed: ' + error.message, 'error'); btn.disabled = false; btn.textContent = 'Save Changes'; return }
+      Utils.closeModal(); Utils.showToast('Plan updated!')
+      invalidateAndReload('prepplans')
+    })
+  }
+
+  function editBugoutModal(item) {
+    Utils.openModal('Edit Bug-Out Plan', `
+      <form id="shtf-edit-form">
+        <div class="form-group">
+          <label class="form-label">Plan Title <span style="color:var(--color-red)">*</span></label>
+          <input type="text" name="title" class="form-input" value="${Utils.esc(item.title)}" required maxlength="150" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Description</label>
+          <textarea name="description" class="form-textarea">${Utils.esc(item.description || '')}</textarea>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Route</label>
+            <input type="text" name="route" class="form-input" value="${Utils.esc(item.route || '')}" maxlength="200" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Destination</label>
+            <input type="text" name="destination" class="form-input" value="${Utils.esc(item.destination || '')}" maxlength="200" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Notes</label>
+          <textarea name="notes" class="form-textarea">${Utils.esc(item.notes || '')}</textarea>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="Utils.closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="shtf-edit-submit">Save Changes</button>
+        </div>
+      </form>
+    `)
+    document.getElementById('shtf-edit-form').addEventListener('submit', async e => {
+      e.preventDefault()
+      const fd  = new FormData(e.target)
+      const btn = document.getElementById('shtf-edit-submit')
+      btn.disabled = true; btn.textContent = 'Saving…'
+      const { error } = await window.sb.from('shtf_bugout_plans').update({
+        title: fd.get('title').trim(), description: fd.get('description').trim() || null,
+        route: fd.get('route').trim() || null, destination: fd.get('destination').trim() || null,
+        notes: fd.get('notes').trim() || null,
+      }).eq('id', item.id)
+      if (error) { Utils.showToast('Save failed: ' + error.message, 'error'); btn.disabled = false; btn.textContent = 'Save Changes'; return }
+      Utils.closeModal(); Utils.showToast('Plan updated!')
+      invalidateAndReload('bugout')
+    })
+  }
+
+  function invalidateAndReload(type) {
+    loadedTabs[type]       = false
+    loadedTabs['overview'] = false
+    delete _dataCache[type]
+    loadSubSection(type)
   }
 
   // ── Add Modals ────────────────────────────────────────────────

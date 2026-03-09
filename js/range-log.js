@@ -326,6 +326,7 @@ window.RangeLogModule = (() => {
             ${summaryBar}
           </div>
           <div class="session-header-right">
+            <button class="btn btn-secondary btn-sm edit-session-btn" data-id="${sid}" aria-label="Edit session">Edit</button>
             <button class="btn btn-danger btn-sm delete-session-btn" data-id="${sid}" aria-label="Delete session">✕</button>
             <span class="session-chevron" aria-hidden="true">▼</span>
           </div>
@@ -466,6 +467,13 @@ window.RangeLogModule = (() => {
       }
       header.addEventListener('click', handleToggle)
       header.addEventListener('keydown', handleToggle)
+    })
+
+    document.querySelectorAll('.edit-session-btn').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation()
+        openEditSessionModal(btn.dataset.id)
+      })
     })
 
     document.querySelectorAll('.delete-session-btn').forEach(btn => {
@@ -614,6 +622,10 @@ window.RangeLogModule = (() => {
 
     container.innerHTML = entries.map(entry => renderEntryCard(entry, sessionId)).join('')
 
+    container.querySelectorAll('.edit-entry-btn').forEach(btn => {
+      btn.addEventListener('click', () => openEditEntryModal(btn.dataset.id, btn.dataset.sessionId))
+    })
+
     container.querySelectorAll('.delete-entry-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         Utils.confirmDialog(
@@ -655,10 +667,14 @@ window.RangeLogModule = (() => {
         <div class="entry-card-header">
           <span class="entry-weapon-badge${isFromLoadout ? ' entry-weapon-loadout' : ''}">${weaponLabel}</span>
           ${chips.map(c => `<span class="entry-detail-chip">${c}</span>`).join('')}
-          <button class="btn btn-danger btn-sm delete-entry-btn"
-            data-id="${entry.id}" data-session-id="${sessionId}"
-            aria-label="Remove entry"
-            style="margin-left:auto;flex-shrink:0;">✕</button>
+          <div style="margin-left:auto;flex-shrink:0;display:flex;gap:4px;">
+            <button class="btn btn-secondary btn-sm edit-entry-btn"
+              data-id="${entry.id}" data-session-id="${sessionId}"
+              aria-label="Edit entry">Edit</button>
+            <button class="btn btn-danger btn-sm delete-entry-btn"
+              data-id="${entry.id}" data-session-id="${sessionId}"
+              aria-label="Remove entry">✕</button>
+          </div>
         </div>
         ${hasDetail ? `
         <div class="entry-card-detail">
@@ -682,6 +698,235 @@ window.RangeLogModule = (() => {
       _sessions[idx].range_entries = data
       renderStats()
     }
+  }
+
+  // ── Edit Handlers ────────────────────────────────────────────
+
+  function openEditSessionModal(sessionId) {
+    const session = _sessions.find(s => String(s.id) === String(sessionId))
+    if (!session) return
+
+    Utils.openModal('Edit Session', `
+      <form id="edit-session-form" autocomplete="off">
+        <div class="form-group">
+          <label class="form-label">Date <span style="color:var(--color-red)">*</span></label>
+          <input type="date" name="session_date" class="form-input" value="${Utils.esc(session.session_date)}" required />
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Location / Range</label>
+            <input type="text" name="location" class="form-input" value="${Utils.esc(session.location || '')}" placeholder="e.g. Elm Fork, Backyard" maxlength="100" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Conditions / Weather</label>
+            <input type="text" name="conditions" class="form-input" value="${Utils.esc(session.conditions || '')}" placeholder="e.g. Sunny, 75°F, light wind" maxlength="100" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Session Notes</label>
+          <textarea name="notes" class="form-textarea">${Utils.esc(session.notes || '')}</textarea>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="Utils.closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="edit-session-submit">Save Changes</button>
+        </div>
+      </form>
+    `)
+
+    document.getElementById('edit-session-form').addEventListener('submit', async e => {
+      e.preventDefault()
+      const fd  = new FormData(e.target)
+      const btn = document.getElementById('edit-session-submit')
+      btn.disabled = true; btn.textContent = 'Saving…'
+
+      const { error } = await window.sb
+        .from('range_sessions')
+        .update({
+          session_date: fd.get('session_date'),
+          location:     fd.get('location').trim()   || null,
+          conditions:   fd.get('conditions').trim() || null,
+          notes:        fd.get('notes').trim()      || null,
+        })
+        .eq('id', sessionId)
+
+      if (error) {
+        Utils.showToast('Save failed: ' + error.message, 'error')
+        btn.disabled = false; btn.textContent = 'Save Changes'
+        return
+      }
+      Utils.closeModal()
+      Utils.showToast('Session updated.')
+      await loadSessions()
+    })
+  }
+
+  async function openEditEntryModal(entryId, sessionId) {
+    const { data: entry, error } = await window.sb
+      .from('range_entries').select('*').eq('id', entryId).single()
+    if (error || !entry) { Utils.showToast('Could not load entry.', 'error'); return }
+
+    const weaponOptions = _loadoutWeapons.length > 0
+      ? `<select id="edit-ep-weapon-select" class="form-select">
+           <option value="">— Select from Loadout —</option>
+           ${_loadoutWeapons.map(w => {
+             const typeLabel = WEAPON_CATEGORY_LABELS[w.category] || w.category
+             return `<option value="${w.id}" data-name="${Utils.esc(w.name)}">${typeLabel} — ${Utils.esc(w.name)}</option>`
+           }).join('')}
+           <option value="__manual__">✏ Type Manually</option>
+         </select>
+         <input type="text" id="edit-ep-weapon-text" name="weapon_used"
+           class="form-input" value="${Utils.esc(entry.weapon_used || '')}"
+           placeholder="e.g. BCM AR15, Glock 19" maxlength="100"
+           style="margin-top:6px;${entry.loadout_item_id ? 'display:none;' : ''}" />
+         <input type="hidden" id="edit-ep-loadout-id" name="loadout_item_id" value="${Utils.esc(entry.loadout_item_id || '')}" />`
+      : `<input type="text" name="weapon_used" class="form-input"
+           value="${Utils.esc(entry.weapon_used || '')}"
+           placeholder="e.g. BCM AR15, Glock 19" maxlength="100" />
+         <input type="hidden" name="loadout_item_id" value="" />`
+
+    Utils.openModal('Edit Entry', `
+      <form id="edit-entry-form" autocomplete="off">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Weapon</label>
+            <div>${weaponOptions}</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Caliber / Ammo Type</label>
+            <input type="text" name="caliber" class="form-input"
+              value="${Utils.esc(entry.caliber || '')}" maxlength="80" />
+          </div>
+        </div>
+        <div class="form-row-3">
+          <div class="form-group">
+            <label class="form-label">Rounds Fired</label>
+            <input type="number" name="rounds_fired" class="form-input"
+              value="${entry.rounds_fired ?? ''}" min="0" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Distance</label>
+            <input type="number" name="distance_value" class="form-input"
+              value="${entry.distance_value ?? ''}" min="0" step="0.5" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Unit</label>
+            <select name="distance_unit" class="form-select">
+              <option value="yards"  ${entry.distance_unit === 'yards'  ? 'selected' : ''}>Yards</option>
+              <option value="meters" ${entry.distance_unit === 'meters' ? 'selected' : ''}>Meters</option>
+              <option value="feet"   ${entry.distance_unit === 'feet'   ? 'selected' : ''}>Feet</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Hits</label>
+            <input type="number" name="hits" class="form-input"
+              value="${entry.hits ?? ''}" min="0" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Misses</label>
+            <input type="number" name="misses" class="form-input"
+              value="${entry.misses ?? ''}" min="0" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Target Type</label>
+            <select name="target_type" class="form-select">
+              <option value="" ${!entry.target_type ? 'selected' : ''}>— Select —</option>
+              <option value="paper"        ${entry.target_type === 'paper'        ? 'selected' : ''}>Paper</option>
+              <option value="steel"        ${entry.target_type === 'steel'        ? 'selected' : ''}>Steel</option>
+              <option value="IPSC"         ${entry.target_type === 'IPSC'         ? 'selected' : ''}>IPSC / IDPA</option>
+              <option value="silhouette"   ${entry.target_type === 'silhouette'   ? 'selected' : ''}>Silhouette</option>
+              <option value="dueling_tree" ${entry.target_type === 'dueling_tree' ? 'selected' : ''}>Dueling Tree</option>
+              <option value="reactive"     ${entry.target_type === 'reactive'     ? 'selected' : ''}>Reactive</option>
+              <option value="other"        ${entry.target_type === 'other'        ? 'selected' : ''}>Other</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Drill / Exercise</label>
+            <input type="text" name="drill_name" class="form-input"
+              value="${Utils.esc(entry.drill_name || '')}" maxlength="100" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Notes</label>
+          <textarea name="notes" class="form-textarea">${Utils.esc(entry.notes || '')}</textarea>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="Utils.closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="edit-entry-submit">Save Changes</button>
+        </div>
+      </form>
+    `)
+
+    // Wire weapon picker if loadout weapons exist
+    const weaponSelect = document.getElementById('edit-ep-weapon-select')
+    if (weaponSelect) {
+      if (entry.loadout_item_id) weaponSelect.value = entry.loadout_item_id
+      weaponSelect.addEventListener('change', () => {
+        const val     = weaponSelect.value
+        const textEl  = document.getElementById('edit-ep-weapon-text')
+        const ldIdEl  = document.getElementById('edit-ep-loadout-id')
+        if (val === '__manual__') {
+          textEl.style.display = ''
+          textEl.focus()
+          ldIdEl.value = ''
+        } else if (val === '') {
+          textEl.style.display = 'none'
+          textEl.value = ''
+          ldIdEl.value = ''
+        } else {
+          textEl.style.display = 'none'
+          textEl.value = ''
+          ldIdEl.value = val
+        }
+      })
+    }
+
+    document.getElementById('edit-entry-form').addEventListener('submit', async e => {
+      e.preventDefault()
+      const fd  = new FormData(e.target)
+      const btn = document.getElementById('edit-entry-submit')
+      btn.disabled = true; btn.textContent = 'Saving…'
+
+      const toInt = v => (v !== '' && v != null) ? parseInt(v)   : null
+      const toNum = v => (v !== '' && v != null) ? parseFloat(v) : null
+
+      const loadoutItemId = fd.get('loadout_item_id') || null
+      let weaponUsed = fd.get('weapon_used')?.trim() || null
+      if (loadoutItemId && !weaponUsed) {
+        const match = _loadoutWeapons.find(w => w.id === loadoutItemId)
+        if (match) weaponUsed = match.name
+      }
+
+      const { error } = await window.sb
+        .from('range_entries')
+        .update({
+          weapon_used:     weaponUsed,
+          loadout_item_id: loadoutItemId,
+          caliber:         fd.get('caliber').trim()      || null,
+          rounds_fired:    toInt(fd.get('rounds_fired')),
+          distance_value:  toNum(fd.get('distance_value')),
+          distance_unit:   fd.get('distance_unit') || 'yards',
+          hits:            toInt(fd.get('hits')),
+          misses:          toInt(fd.get('misses')),
+          target_type:     fd.get('target_type')         || null,
+          drill_name:      fd.get('drill_name').trim()   || null,
+          notes:           fd.get('notes').trim()        || null,
+        })
+        .eq('id', entryId)
+
+      if (error) {
+        Utils.showToast('Save failed: ' + error.message, 'error')
+        btn.disabled = false; btn.textContent = 'Save Changes'
+        return
+      }
+      Utils.closeModal()
+      Utils.showToast('Entry updated.')
+      await loadEntries(sessionId)
+      await refreshSessionData(sessionId)
+    })
   }
 
   // ── Delete Handlers ──────────────────────────────────────────

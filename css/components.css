@@ -1085,3 +1085,58 @@
     font-size: 1rem;
   }
 }
+
+/* ── Add Operator Page ─────────────────────────────────────── */
+.add-user-container {
+  max-width: 480px;
+  margin: var(--space-2xl) auto;
+}
+
+.add-user-card {
+  background-color: var(--color-bg-panel);
+  border: 1px solid var(--color-border);
+  border-top: 3px solid var(--color-green);
+  border-radius: var(--radius-md);
+  padding: var(--space-xl);
+  box-shadow: var(--shadow-panel);
+}
+
+.add-user-heading {
+  font-family: var(--font-mono);
+  font-size: 1.1rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-green-bright);
+  margin-bottom: var(--space-xs);
+}
+
+.add-user-desc {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-xl);
+}
+
+/* ── Print Styles ──────────────────────────────────────────── */
+@media print {
+  .site-header,
+  .tab-nav,
+  .toolbar,
+  .back-to-top,
+  .shtf-tabs,
+  .modal-overlay,
+  #toast-container,
+  .btn,
+  .profile-menu-btn,
+  .profile-dropdown {
+    display: none !important;
+  }
+
+  body {
+    background: #fff !important;
+    color: #000 !important;
+  }
+
+  .main-content {
+    padding: 0 !important;
+  }
+}

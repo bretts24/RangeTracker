@@ -170,6 +170,7 @@ window.LoadoutModule = (() => {
       bindGroupToggles()
       bindWeaponCardToggles()
       bindRemoveAttachmentButtons()
+      bindEditAttachmentButtons()
     }
   }
 
@@ -207,9 +208,16 @@ window.LoadoutModule = (() => {
       : `<div class="build-attachment-list">${attachments.map(a => `
           <div class="build-item">
             <span class="build-item-type">${Utils.esc(attTypeLabel(a.attachment_type))}</span>
-            <span class="build-item-name">${Utils.esc(a.name)}${a.brand ? ` <span class="build-item-brand">· ${Utils.esc(a.brand)}</span>` : ''}</span>
-            <button class="btn-remove-attachment" data-id="${a.id}" data-weapon-id="${weapon.id}"
-              title="Remove attachment" aria-label="Remove ${Utils.esc(a.name)}">✕</button>
+            <div class="build-item-body">
+              <span class="build-item-name">${Utils.esc(a.name)}${a.brand ? ` <span class="build-item-brand">· ${Utils.esc(a.brand)}</span>` : ''}</span>
+              ${a.notes ? `<span class="build-item-notes">${Utils.esc(a.notes)}</span>` : ''}
+            </div>
+            <div class="build-item-actions">
+              <button class="btn btn-secondary btn-sm btn-edit-attachment" data-id="${a.id}"
+                title="Edit attachment" aria-label="Edit ${Utils.esc(a.name)}">Edit</button>
+              <button class="btn-remove-attachment" data-id="${a.id}" data-weapon-id="${weapon.id}"
+                title="Remove attachment" aria-label="Remove ${Utils.esc(a.name)}">✕</button>
+            </div>
           </div>
         `).join('')}</div>`
 
@@ -539,6 +547,76 @@ window.LoadoutModule = (() => {
   function bindRemoveAttachmentButtons() {
     document.querySelectorAll('.btn-remove-attachment').forEach(btn => {
       btn.addEventListener('click', () => openRemoveAttachmentModal(btn.dataset.id))
+    })
+  }
+
+  function bindEditAttachmentButtons() {
+    document.querySelectorAll('.btn-edit-attachment').forEach(btn => {
+      btn.addEventListener('click', () => openEditAttachmentModal(btn.dataset.id))
+    })
+  }
+
+  async function openEditAttachmentModal(attachmentId) {
+    // Find attachment from in-memory map
+    let attachment = null
+    for (const atts of Object.values(_attachMap)) {
+      attachment = atts.find(a => String(a.id) === String(attachmentId))
+      if (attachment) break
+    }
+    if (!attachment) { Utils.showToast('Could not find attachment.', 'error'); return }
+
+    Utils.openModal('Edit Attachment', `
+      <form id="edit-att-form" autocomplete="off">
+        <div class="form-group">
+          <label class="form-label">Attachment Type</label>
+          <select name="attachment_type" class="form-select">${attTypeOptionsHTML()}</select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Name / Model <span style="color:var(--color-red)">*</span></label>
+          <input type="text" name="name" class="form-input" value="${Utils.esc(attachment.name)}" required maxlength="100" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Brand / Manufacturer</label>
+          <input type="text" name="brand" class="form-input" value="${Utils.esc(attachment.brand || '')}" maxlength="80" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Notes</label>
+          <textarea name="notes" class="form-textarea">${Utils.esc(attachment.notes || '')}</textarea>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="Utils.closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="edit-att-submit">Save Changes</button>
+        </div>
+      </form>
+    `)
+
+    // Pre-select the current type
+    document.querySelector('#edit-att-form select[name="attachment_type"]').value = attachment.attachment_type
+
+    document.getElementById('edit-att-form').addEventListener('submit', async (e) => {
+      e.preventDefault()
+      const fd  = new FormData(e.target)
+      const btn = document.getElementById('edit-att-submit')
+      btn.disabled = true; btn.textContent = 'Saving...'
+
+      const { error } = await window.sb
+        .from('weapon_attachments')
+        .update({
+          attachment_type: fd.get('attachment_type'),
+          name:  fd.get('name').trim(),
+          brand: fd.get('brand').trim() || null,
+          notes: fd.get('notes').trim() || null,
+        })
+        .eq('id', attachmentId)
+
+      if (error) {
+        Utils.showToast('Save failed: ' + error.message, 'error')
+        btn.disabled = false; btn.textContent = 'Save Changes'
+        return
+      }
+      Utils.closeModal()
+      Utils.showToast('Attachment updated.')
+      await loadAll()
     })
   }
 
