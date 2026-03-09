@@ -6,6 +6,19 @@ window.rlAutoMisses = function (sid) {
   if (m) m.value = Math.max(0, rf - h)
 }
 
+// Tap-to-select 1-10 rating (groupings, performance, etc.)
+window.rlSetRating = function (containerId, val) {
+  const c = document.getElementById(containerId)
+  if (!c) return
+  const current = parseInt(c.querySelector('input[type=hidden]')?.value) || 0
+  const newVal  = (current === val) ? 0 : val   // tap same to clear
+  c.querySelectorAll('.rating-btn').forEach(btn => {
+    btn.classList.toggle('rating-active', parseInt(btn.dataset.val) <= newVal)
+  })
+  const inp = c.querySelector('input[type=hidden]')
+  if (inp) inp.value = newVal || ''
+}
+
 // Range Log Module
 window.RangeLogModule = (() => {
   let _userId = null
@@ -19,6 +32,13 @@ window.RangeLogModule = (() => {
   const WEAPON_CATEGORY_LABELS = {
     rifle: 'Rifle', pistol: 'Pistol', shotgun: 'Shotgun',
     smg: 'SMG', pcc: 'PCC', other_weapon: 'Other',
+  }
+
+  function ratingRowHTML(id, preselected = 0) {
+    const btns = [1,2,3,4,5,6,7,8,9,10].map(n =>
+      `<button type="button" class="rating-btn${n <= preselected ? ' rating-active' : ''}" data-val="${n}" onclick="window.rlSetRating('${id}',${n})">${n}</button>`
+    ).join('')
+    return `<div class="rating-row" id="${id}">${btns}<input type="hidden" name="grouping_rating" value="${preselected || ''}" /></div>`
   }
 
   async function init(userId) {
@@ -492,6 +512,10 @@ window.RangeLogModule = (() => {
           </div>
         </div>
         <div class="form-group">
+          <label class="form-label">Groupings <span style="font-size:0.7em;color:var(--color-text-muted);font-weight:normal;">1 = scattered · 10 = tight</span></label>
+          ${ratingRowHTML(`gr-${sid}`)}
+        </div>
+        <div class="form-group">
           <label class="form-label">Notes</label>
           <textarea name="notes" class="form-textarea" placeholder="Observations, equipment issues, improvements, etc." rows="2"></textarea>
         </div>
@@ -642,9 +666,10 @@ window.RangeLogModule = (() => {
         distance_unit: fd.get('distance_unit') || 'yards',
         hits: toInt(fd.get('hits')),
         misses: toInt(fd.get('misses')),
-        target_type: fd.get('target_type') || null,
-        drill_name: fd.get('drill_name').trim() || null,
-        notes: fd.get('notes').trim() || null,
+        target_type:     fd.get('target_type') || null,
+        drill_name:      fd.get('drill_name').trim() || null,
+        notes:           fd.get('notes').trim() || null,
+        grouping_rating: fd.get('grouping_rating') ? parseInt(fd.get('grouping_rating')) : null,
       }
 
       const btn = form.querySelector('[type=submit]')
@@ -792,6 +817,7 @@ window.RangeLogModule = (() => {
         <div class="entry-card-detail">
           ${entry.rounds_fired != null ? `<span>Rounds: ${entry.rounds_fired}</span>` : ''}
           ${accuracyStr ? `<span>${accuracyStr}</span>` : ''}
+          ${entry.grouping_rating != null ? `<span class="grouping-badge grouping-${entry.grouping_rating >= 8 ? 'high' : entry.grouping_rating >= 5 ? 'mid' : 'low'}">Groupings: ${entry.grouping_rating}/10</span>` : ''}
           ${entry.drill_name ? `<span>Drill: ${Utils.esc(entry.drill_name)}</span>` : ''}
           ${entry.notes ? `<div class="entry-card-notes">${Utils.esc(entry.notes)}</div>` : ''}
         </div>` : ''}
@@ -961,6 +987,10 @@ window.RangeLogModule = (() => {
           </div>
         </div>
         <div class="form-group">
+          <label class="form-label">Groupings <span style="font-size:0.7em;color:var(--color-text-muted);font-weight:normal;">1 = scattered · 10 = tight</span></label>
+          ${ratingRowHTML('gr-edit', entry.grouping_rating || 0)}
+        </div>
+        <div class="form-group">
           <label class="form-label">Notes</label>
           <textarea name="notes" class="form-textarea">${Utils.esc(entry.notes || '')}</textarea>
         </div>
@@ -1063,6 +1093,7 @@ window.RangeLogModule = (() => {
           target_type:     fd.get('target_type')         || null,
           drill_name:      fd.get('drill_name').trim()   || null,
           notes:           fd.get('notes').trim()        || null,
+          grouping_rating: fd.get('grouping_rating') ? parseInt(fd.get('grouping_rating')) : null,
         })
         .eq('id', entryId)
 

@@ -392,6 +392,7 @@ window.SHTFModule = (() => {
     if (type === 'overview')  return loadOverview()
     if (type === 'prepplans') return loadPrepPlans()
     if (type === 'bugout')    return loadBugoutPlans()
+    if (type === 'ammo')      return loadAmmoSection()
 
     const meta      = CATEGORY_META[type]
     const container = document.getElementById(`shtf-${type}-content`)
@@ -414,6 +415,26 @@ window.SHTFModule = (() => {
       renderSimpleTable(type, data || [], container)
     } catch (err) {
       container.innerHTML = '<p class="loading-text">Failed to load data.</p>'
+    }
+  }
+
+  async function loadAmmoSection() {
+    const container = document.getElementById('shtf-ammo-content')
+    if (!container) return
+    container.innerHTML = Utils.skeletonRows(3)
+    try {
+      const { data, error } = await window.sb
+        .from('shtf_ammo').select('*').eq('user_id', _userId)
+        .order('created_at', { ascending: true })
+      if (error) { container.innerHTML = '<p class="loading-text">Error: ' + Utils.esc(error.message) + '</p>'; return }
+      const all     = data || []
+      const active  = all.filter(a => a.status !== 'archived')
+      const history = all.filter(a => a.status === 'archived')
+      _dataCache['ammo']         = active
+      _dataCache['ammo_history'] = history
+      renderSimpleTable('ammo', active, container)
+    } catch (err) {
+      container.innerHTML = '<p class="loading-text">Failed to load ammo.</p>'
     }
   }
 
@@ -538,23 +559,42 @@ window.SHTFModule = (() => {
         </tr>`
       }
     } else if (type === 'ammo') {
-      const ammoBarHTML = renderAmmoBars(items)
-      headersHTML = mkHeaders(type, [['caliber','Caliber'],['quantity','Qty (rds)'],['brand','Brand'],['notes','Notes'],[null,'']])
-      rowsFn = item => `<tr>
-        <td>${Utils.esc(item.caliber)}</td>
-        <td>${item.quantity != null ? item.quantity.toLocaleString() : '—'}</td>
-        <td>${Utils.esc(item.brand || '—')}</td>
-        <td>${Utils.esc(item.notes || '—')}</td>
-        <td>${actionBtns('shtf_ammo', item.id, 'ammo')}</td>
-      </tr>`
+      const historyItems = _dataCache['ammo_history'] || []
+      const ammoBarHTML  = renderAmmoBars(displayItems)
+
+      headersHTML = mkHeaders(type, [['caliber','Caliber'],['quantity','Qty (rds)'],['brand','Brand'],['price_paid','Price'],['notes','Notes'],[null,'']])
+      rowsFn = item => {
+        const isDepleted = item.quantity === 0 || item.quantity == null
+        const histBadge  = renderHistBadge(item.caliber, historyItems)
+        const ppr        = (item.price_paid && item.quantity) ? `$${(item.price_paid / item.quantity).toFixed(3)}/rd` : '—'
+        const priceCell  = item.price_paid ? `$${parseFloat(item.price_paid).toFixed(2)}<br><span style="font-size:0.7em;color:var(--color-text-muted);">${ppr}</span>` : '—'
+        const actions    = isDepleted
+          ? `<div style="display:flex;gap:4px;white-space:nowrap;">
+               <button class="btn btn-primary btn-sm ammo-archive-btn" data-id="${item.id}" aria-label="Archive and rate">↗ Archive</button>
+               <button class="btn btn-danger btn-sm shtf-del-btn" data-table="shtf_ammo" data-id="${item.id}" data-type="ammo" aria-label="Delete">✕</button>
+             </div>`
+          : actionBtns('shtf_ammo', item.id, 'ammo')
+        return `<tr${isDepleted ? ' class="ammo-depleted-row"' : ''}>
+          <td>${Utils.esc(item.caliber)}${histBadge}</td>
+          <td>${isDepleted ? '<span style="color:var(--color-red);font-weight:600;">DEPLETED</span>' : item.quantity.toLocaleString()}</td>
+          <td>${Utils.esc(item.brand || '—')}</td>
+          <td>${priceCell}</td>
+          <td>${Utils.esc(item.notes || '—')}</td>
+          <td>${actions}</td>
+        </tr>`
+      }
+
       container.innerHTML = ammoBarHTML + `
         <div style="overflow-x:auto;">
           <table class="data-table">
             <thead><tr>${headersHTML}</tr></thead>
             <tbody>${displayItems.map(rowsFn).join('')}</tbody>
           </table>
-        </div>`
+        </div>
+        ${renderAmmoHistory(historyItems)}`
+
       bindTableActionBtns(container, type)
+      bindAmmoSpecialBtns(container)
       return
     } else {
       headersHTML = mkHeaders(type, [['item','Item'],['quantity','Quantity'],['notes','Notes'],[null,'']])
@@ -615,6 +655,176 @@ window.SHTFModule = (() => {
         <div class="section-heading" style="font-size:0.7rem;margin-bottom:var(--space-md);">Inventory at a Glance</div>
         ${bars}
       </div>`
+  }
+
+  // ── Ammo History Helpers ──────────────────────────────────────
+
+  function renderHistBadge(caliber, historyItems) {
+    const rated = historyItems.filter(h => h.caliber === caliber && h.performance_rating != null)
+    if (rated.length === 0) return ''
+    const avg = rated.reduce((s, h) => s + h.performance_rating, 0) / rated.length
+    return `<span class="ammo-hist-badge" title="${rated.length} archived batch${rated.length > 1 ? 'es' : ''}">★ ${avg.toFixed(1)}</span>`
+  }
+
+  function perfClass(r) { return r >= 8 ? 'perf-high' : r >= 5 ? 'perf-mid' : 'perf-low' }
+
+  function renderAmmoHistory(historyItems) {
+    if (historyItems.length === 0) return ''
+    const fmtDate = iso => {
+      const d = new Date(iso)
+      return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear()
+    }
+    const rows = historyItems.map(item => {
+      const origQty = item.original_quantity || 'N/A'
+      const ppr     = (item.price_paid && item.original_quantity)
+        ? `$${(item.price_paid / item.original_quantity).toFixed(3)}/rd`
+        : item.price_paid ? `$${parseFloat(item.price_paid).toFixed(2)} paid` : '—'
+      const rating  = item.performance_rating != null
+        ? `<span class="perf-rating-badge ${perfClass(item.performance_rating)}">${item.performance_rating}/10</span>`
+        : `<span style="color:var(--color-text-muted);font-size:0.75rem;">Not rated</span>`
+      return `<tr>
+        <td>${Utils.esc(item.caliber)}</td>
+        <td>${Utils.esc(item.brand || '—')}</td>
+        <td>${origQty !== 'N/A' ? Number(origQty).toLocaleString() : '—'}</td>
+        <td>${ppr}</td>
+        <td>${rating}</td>
+        <td>${Utils.esc(item.performance_notes || '—')}</td>
+        <td style="white-space:nowrap;color:var(--color-text-muted);font-size:0.75rem;">${item.archived_at ? fmtDate(item.archived_at) : '—'}</td>
+        <td>
+          <div style="display:flex;gap:4px;white-space:nowrap;">
+            <button class="btn btn-secondary btn-sm ammo-hist-edit-btn" data-id="${item.id}" aria-label="Edit rating">Rate</button>
+            <button class="btn btn-danger btn-sm shtf-del-btn" data-table="shtf_ammo" data-id="${item.id}" data-type="ammo" aria-label="Delete">✕</button>
+          </div>
+        </td>
+      </tr>`
+    }).join('')
+
+    // Average rating per caliber for the summary line
+    const caliberAvgs = {}
+    historyItems.filter(h => h.performance_rating != null).forEach(h => {
+      caliberAvgs[h.caliber] = caliberAvgs[h.caliber] || []
+      caliberAvgs[h.caliber].push(h.performance_rating)
+    })
+    const topCalibers = Object.entries(caliberAvgs)
+      .map(([cal, ratings]) => ({ cal, avg: ratings.reduce((s, r) => s + r, 0) / ratings.length }))
+      .sort((a, b) => b.avg - a.avg).slice(0, 3)
+      .map(({ cal, avg }) => `<span class="ammo-hist-badge">${Utils.esc(cal)} ★${avg.toFixed(1)}</span>`).join(' ')
+
+    return `
+      <div class="ammo-history-section">
+        <details class="ammo-history-details">
+          <summary class="ammo-history-summary">
+            <span class="ammo-hist-title">Ammo History</span>
+            <span class="ammo-hist-meta">${historyItems.length} batch${historyItems.length > 1 ? 'es' : ''}${topCalibers ? ' · Top: ' + topCalibers : ''}</span>
+          </summary>
+          <div style="overflow-x:auto;margin-top:var(--space-md);">
+            <table class="data-table">
+              <thead><tr><th>Caliber</th><th>Brand</th><th>Orig Qty</th><th>$/rd</th><th>Rating</th><th>Notes</th><th>Archived</th><th></th></tr></thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
+        </details>
+      </div>`
+  }
+
+  function bindAmmoSpecialBtns(container) {
+    container.querySelectorAll('.ammo-archive-btn').forEach(btn => {
+      btn.addEventListener('click', () => openArchiveModal(btn.dataset.id))
+    })
+    container.querySelectorAll('.ammo-hist-edit-btn').forEach(btn => {
+      btn.addEventListener('click', () => editHistoryRatingModal(btn.dataset.id))
+    })
+  }
+
+  function openArchiveModal(itemId) {
+    const item = (_dataCache['ammo'] || []).find(a => String(a.id) === String(itemId))
+    if (!item) return
+    Utils.openModal(`Archive: ${item.caliber}`, `
+      <div style="margin-bottom:var(--space-md);padding:var(--space-sm) var(--space-md);background:var(--color-bg-elevated);border-radius:var(--radius-sm);font-size:0.8rem;color:var(--color-text-muted);">
+        ${Utils.esc(item.brand || 'Unknown brand')}${item.notes ? ' · ' + Utils.esc(item.notes) : ''}
+      </div>
+      <form id="archive-ammo-form">
+        <div class="form-group">
+          <label class="form-label">Performance Rating <span style="font-size:0.7em;color:var(--color-text-muted);font-weight:normal;">1 = poor · 10 = excellent</span></label>
+          <div class="rating-row" id="archive-rating">
+            ${[1,2,3,4,5,6,7,8,9,10].map(n =>
+              `<button type="button" class="rating-btn" data-val="${n}" onclick="window.rlSetRating('archive-rating',${n})">${n}</button>`
+            ).join('')}
+            <input type="hidden" name="performance_rating" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Notes</label>
+          <textarea name="performance_notes" class="form-textarea" rows="3"
+            placeholder="How did it group? Feed reliably? Would you buy again?"></textarea>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="Utils.closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="archive-ammo-submit">Archive & Rate</button>
+        </div>
+      </form>
+    `)
+    document.getElementById('archive-ammo-form').addEventListener('submit', async e => {
+      e.preventDefault()
+      const fd  = new FormData(e.target)
+      const btn = document.getElementById('archive-ammo-submit')
+      btn.disabled = true; btn.textContent = 'Archiving…'
+      const rating = fd.get('performance_rating') ? parseInt(fd.get('performance_rating')) : null
+      const { error } = await window.sb.from('shtf_ammo').update({
+        status:              'archived',
+        performance_rating:  rating,
+        performance_notes:   fd.get('performance_notes').trim() || null,
+        archived_at:         new Date().toISOString(),
+        original_quantity:   item.original_quantity ?? item.quantity,
+      }).eq('id', itemId)
+      if (error) { Utils.showToast('Error: ' + error.message, 'error'); btn.disabled = false; btn.textContent = 'Archive & Rate'; return }
+      Utils.closeModal()
+      Utils.showToast('Ammo archived!')
+      invalidateAndReload('ammo')
+    })
+  }
+
+  function editHistoryRatingModal(itemId) {
+    const item = (_dataCache['ammo_history'] || []).find(a => String(a.id) === String(itemId))
+    if (!item) return
+    Utils.openModal(`Re-rate: ${item.caliber}`, `
+      <div style="margin-bottom:var(--space-md);padding:var(--space-sm) var(--space-md);background:var(--color-bg-elevated);border-radius:var(--radius-sm);font-size:0.8rem;color:var(--color-text-muted);">
+        ${Utils.esc(item.brand || 'Unknown brand')}${item.original_quantity ? ' · ' + Number(item.original_quantity).toLocaleString() + ' rds originally' : ''}
+      </div>
+      <form id="hist-rating-form">
+        <div class="form-group">
+          <label class="form-label">Performance Rating</label>
+          <div class="rating-row" id="hist-rating">
+            ${[1,2,3,4,5,6,7,8,9,10].map(n =>
+              `<button type="button" class="rating-btn${item.performance_rating != null && n <= item.performance_rating ? ' rating-active' : ''}" data-val="${n}" onclick="window.rlSetRating('hist-rating',${n})">${n}</button>`
+            ).join('')}
+            <input type="hidden" name="performance_rating" value="${item.performance_rating || ''}" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Notes</label>
+          <textarea name="performance_notes" class="form-textarea" rows="3">${Utils.esc(item.performance_notes || '')}</textarea>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="Utils.closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="hist-rating-submit">Save</button>
+        </div>
+      </form>
+    `)
+    document.getElementById('hist-rating-form').addEventListener('submit', async e => {
+      e.preventDefault()
+      const fd  = new FormData(e.target)
+      const btn = document.getElementById('hist-rating-submit')
+      btn.disabled = true; btn.textContent = 'Saving…'
+      const rating = fd.get('performance_rating') ? parseInt(fd.get('performance_rating')) : null
+      const { error } = await window.sb.from('shtf_ammo').update({
+        performance_rating: rating,
+        performance_notes:  fd.get('performance_notes').trim() || null,
+      }).eq('id', itemId)
+      if (error) { Utils.showToast('Error: ' + error.message, 'error'); btn.disabled = false; btn.textContent = 'Save'; return }
+      Utils.closeModal(); Utils.showToast('Rating saved!')
+      invalidateAndReload('ammo')
+    })
   }
 
   function bindTableActionBtns(container, type) {
@@ -955,6 +1165,7 @@ window.SHTFModule = (() => {
   }
 
   function editAmmoModal(item) {
+    const initPPR = (item.price_paid && item.quantity) ? '$' + (item.price_paid / item.quantity).toFixed(3) + '/rd' : '—'
     Utils.openModal('Edit Ammo', `
       <form id="shtf-edit-form">
         <div class="form-group">
@@ -971,6 +1182,16 @@ window.SHTFModule = (() => {
             <input type="text" name="brand" class="form-input" value="${Utils.esc(item.brand || '')}" maxlength="80" />
           </div>
         </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Price Paid <span style="font-size:0.7em;color:var(--color-text-muted);font-weight:normal;">(total box/lot)</span></label>
+            <input type="number" name="price_paid" class="form-input" value="${item.price_paid ?? ''}" min="0" step="0.01" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Price / Round <span style="font-size:0.7em;color:var(--color-text-muted);font-weight:normal;">(auto)</span></label>
+            <input type="text" id="edit-ammo-ppr" class="form-input" value="${initPPR}" readonly style="opacity:0.75;cursor:default;" />
+          </div>
+        </div>
         <div class="form-group">
           <label class="form-label">Notes</label>
           <textarea name="notes" class="form-textarea">${Utils.esc(item.notes || '')}</textarea>
@@ -982,6 +1203,14 @@ window.SHTFModule = (() => {
       </form>
     `)
     bindCaliberSelect()
+    const calcPPR = () => {
+      const qty   = parseFloat(document.querySelector('#shtf-edit-form [name=quantity]')?.value) || 0
+      const price = parseFloat(document.querySelector('#shtf-edit-form [name=price_paid]')?.value) || 0
+      const el = document.getElementById('edit-ammo-ppr')
+      if (el) el.value = (qty > 0 && price > 0) ? '$' + (price / qty).toFixed(3) + '/rd' : '—'
+    }
+    document.querySelector('#shtf-edit-form [name=quantity]')?.addEventListener('input', calcPPR)
+    document.querySelector('#shtf-edit-form [name=price_paid]')?.addEventListener('input', calcPPR)
     document.getElementById('shtf-edit-form').addEventListener('submit', async e => {
       e.preventDefault()
       const fd      = new FormData(e.target)
@@ -989,10 +1218,14 @@ window.SHTFModule = (() => {
       const caliber = resolveCaliberFromForm(fd)
       if (!caliber) { Utils.showToast('Please select or enter a caliber.', 'error'); return }
       btn.disabled = true; btn.textContent = 'Saving…'
-      const qty = fd.get('quantity')
+      const qty   = fd.get('quantity')
+      const price = fd.get('price_paid')
       const { error } = await window.sb.from('shtf_ammo').update({
-        caliber, quantity: qty ? parseInt(qty) : null,
-        brand: fd.get('brand').trim() || null, notes: fd.get('notes').trim() || null,
+        caliber,
+        quantity:   qty ? parseInt(qty) : null,
+        brand:      fd.get('brand').trim() || null,
+        price_paid: price ? parseFloat(price) : null,
+        notes:      fd.get('notes').trim() || null,
       }).eq('id', item.id)
       if (error) { Utils.showToast('Save failed: ' + error.message, 'error'); btn.disabled = false; btn.textContent = 'Save Changes'; return }
       Utils.closeModal(); Utils.showToast('Updated!')
@@ -1188,6 +1421,7 @@ window.SHTFModule = (() => {
     loadedTabs[type]       = false
     loadedTabs['overview'] = false
     delete _dataCache[type]
+    if (type === 'ammo') delete _dataCache['ammo_history']
     loadSubSection(type)
   }
 
@@ -1380,6 +1614,16 @@ window.SHTFModule = (() => {
             <input type="text" name="brand" class="form-input" placeholder="e.g. Federal, Hornady" maxlength="80" />
           </div>
         </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Price Paid <span style="font-size:0.7em;color:var(--color-text-muted);font-weight:normal;">(total box/lot)</span></label>
+            <input type="number" name="price_paid" class="form-input" placeholder="e.g. 24.99" min="0" step="0.01" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Price / Round <span style="font-size:0.7em;color:var(--color-text-muted);font-weight:normal;">(auto)</span></label>
+            <input type="text" id="add-ammo-ppr" class="form-input" placeholder="—" readonly style="opacity:0.75;cursor:default;" />
+          </div>
+        </div>
         <div class="form-group">
           <label class="form-label">Notes</label>
           <textarea name="notes" class="form-textarea" placeholder="Grain weight, storage location, lot #, etc."></textarea>
@@ -1391,18 +1635,32 @@ window.SHTFModule = (() => {
       </form>
     `)
     bindCaliberSelect()
+    // Auto-calc price per round
+    const calcPPR = () => {
+      const qty   = parseFloat(document.querySelector('#shtf-form [name=quantity]')?.value) || 0
+      const price = parseFloat(document.querySelector('#shtf-form [name=price_paid]')?.value) || 0
+      const el = document.getElementById('add-ammo-ppr')
+      if (el) el.value = (qty > 0 && price > 0) ? '$' + (price / qty).toFixed(3) + '/rd' : '—'
+    }
+    document.querySelector('#shtf-form [name=quantity]')?.addEventListener('input', calcPPR)
+    document.querySelector('#shtf-form [name=price_paid]')?.addEventListener('input', calcPPR)
     document.getElementById('shtf-form').addEventListener('submit', async e => {
       e.preventDefault()
       const fd      = new FormData(e.target)
       const caliber = resolveCaliberFromForm(fd)
       if (!caliber) { Utils.showToast('Please select or enter a caliber.', 'error'); return }
-      const qty = fd.get('quantity')
+      const qty   = fd.get('quantity')
+      const price = fd.get('price_paid')
+      const qtyInt = qty ? parseInt(qty) : null
       await saveItem('shtf_ammo', {
-        user_id:  _userId,
+        user_id:           _userId,
         caliber,
-        quantity: qty ? parseInt(qty) : null,
-        brand:    fd.get('brand').trim() || null,
-        notes:    fd.get('notes').trim() || null,
+        quantity:          qtyInt,
+        original_quantity: qtyInt,
+        brand:             fd.get('brand').trim() || null,
+        price_paid:        price ? parseFloat(price) : null,
+        notes:             fd.get('notes').trim() || null,
+        status:            'active',
       }, 'ammo', e.target)
     })
   }
