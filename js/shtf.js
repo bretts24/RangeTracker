@@ -82,7 +82,7 @@ window.SHTFModule = (() => {
     searchWrap.innerHTML = `
       <span class="search-bar-icon">⌕</span>
       <input type="text" id="shtf-search-input" class="search-bar-input"
-        placeholder="Search all categories…" aria-label="Search SHTF tracker" />
+        placeholder="Search all categories…" aria-label="Search supplies" />
     `
     toolbar.appendChild(searchWrap)
 
@@ -486,23 +486,31 @@ window.SHTFModule = (() => {
   function renderAmmoBars(ammoItems) {
     if (ammoItems.length === 0) return ''
 
-    const calibers = ammoItems.filter(i => i.quantity != null)
-    if (calibers.length === 0) return ''
+    // Sum quantities by caliber
+    const totals = {}
+    ammoItems.forEach(i => {
+      if (i.quantity == null) return
+      const key = i.caliber || 'Unknown'
+      totals[key] = (totals[key] || 0) + i.quantity
+    })
 
-    const maxQty = Math.max(...calibers.map(i => i.quantity), 500)
+    const entries = Object.entries(totals)
+    if (entries.length === 0) return ''
 
-    const bars = calibers.map(item => {
-      const pct   = Math.min(100, Math.round((item.quantity / maxQty) * 100))
-      const color = item.quantity >= 500 ? 'var(--color-green-bright)'
-                  : item.quantity >= 100  ? 'var(--color-amber)'
+    const maxQty = Math.max(...entries.map(([, qty]) => qty), 500)
+
+    const bars = entries.map(([caliber, total]) => {
+      const pct   = Math.min(100, Math.round((total / maxQty) * 100))
+      const color = total >= 500 ? 'var(--color-green-bright)'
+                  : total >= 100  ? 'var(--color-amber)'
                   : 'var(--color-red)'
       return `
         <div class="ammo-bar-item">
-          <span class="ammo-bar-caliber">${Utils.esc(item.caliber)}</span>
+          <span class="ammo-bar-caliber">${Utils.esc(caliber)}</span>
           <div class="ammo-bar-track">
             <div class="ammo-bar-fill" style="width:${pct}%;background-color:${color};"></div>
           </div>
-          <span style="font-size:0.75rem;color:var(--color-text-muted);white-space:nowrap;">${item.quantity.toLocaleString()} rds</span>
+          <span style="font-size:0.75rem;color:var(--color-text-muted);white-space:nowrap;">${total.toLocaleString()} rds</span>
         </div>`
     }).join('')
 
@@ -797,7 +805,7 @@ window.SHTFModule = (() => {
       <form id="shtf-edit-form">
         <div class="form-group">
           <label class="form-label">Caliber <span style="color:var(--color-red)">*</span></label>
-          <input type="text" name="caliber" class="form-input" value="${Utils.esc(item.caliber)}" required maxlength="60" />
+          ${caliberSelectHTML(item.caliber)}
         </div>
         <div class="form-row">
           <div class="form-group">
@@ -819,14 +827,17 @@ window.SHTFModule = (() => {
         </div>
       </form>
     `)
+    bindCaliberSelect()
     document.getElementById('shtf-edit-form').addEventListener('submit', async e => {
       e.preventDefault()
-      const fd  = new FormData(e.target)
-      const btn = document.getElementById('shtf-edit-submit')
+      const fd      = new FormData(e.target)
+      const btn     = document.getElementById('shtf-edit-submit')
+      const caliber = resolveCaliberFromForm(fd)
+      if (!caliber) { Utils.showToast('Please select or enter a caliber.', 'error'); return }
       btn.disabled = true; btn.textContent = 'Saving…'
       const qty = fd.get('quantity')
       const { error } = await window.sb.from('shtf_ammo').update({
-        caliber: fd.get('caliber').trim(), quantity: qty ? parseInt(qty) : null,
+        caliber, quantity: qty ? parseInt(qty) : null,
         brand: fd.get('brand').trim() || null, notes: fd.get('notes').trim() || null,
       }).eq('id', item.id)
       if (error) { Utils.showToast('Save failed: ' + error.message, 'error'); btn.disabled = false; btn.textContent = 'Save Changes'; return }
@@ -1118,12 +1129,52 @@ window.SHTFModule = (() => {
     }
   }
 
+  const COMMON_CALIBERS = [
+    '5.56 NATO', '.223 Rem', '9mm', '.45 ACP', '.22 LR',
+    '7.62x39', '7.62x51 NATO', '.308 Win', '.30-06',
+    '12 Gauge', '20 Gauge', '.410 Bore',
+    '.357 Mag', '.38 Special', '.40 S&W', '.44 Mag',
+    '6.5 Creedmoor', '.300 Win Mag', '.50 BMG',
+  ]
+
+  function caliberSelectHTML(selectedVal = '') {
+    const isCustom = selectedVal && !COMMON_CALIBERS.includes(selectedVal)
+    const opts = COMMON_CALIBERS.map(c =>
+      `<option value="${c}"${selectedVal === c ? ' selected' : ''}>${c}</option>`
+    ).join('')
+    return `
+      <select name="caliber_select" class="form-select" id="caliber-select-field">
+        <option value="">— Select Caliber —</option>
+        ${opts}
+        <option value="__custom__"${isCustom ? ' selected' : ''}>Other (specify)…</option>
+      </select>
+      <input type="text" name="caliber_custom" id="caliber-custom-field" class="form-input"
+        placeholder="Enter caliber…" maxlength="60"
+        style="margin-top:8px;display:${isCustom ? 'block' : 'none'};"
+        value="${Utils.esc(isCustom ? selectedVal : '')}" />`
+  }
+
+  function bindCaliberSelect() {
+    const sel = document.getElementById('caliber-select-field')
+    const inp = document.getElementById('caliber-custom-field')
+    if (!sel || !inp) return
+    sel.addEventListener('change', () => {
+      inp.style.display = sel.value === '__custom__' ? 'block' : 'none'
+    })
+  }
+
+  function resolveCaliberFromForm(fd) {
+    const sel = fd.get('caliber_select') || ''
+    if (sel === '__custom__') return (fd.get('caliber_custom') || '').trim()
+    return sel.trim()
+  }
+
   function addAmmoForm() {
     Utils.openModal('Add Ammo Stockpile', `
       <form id="shtf-form">
         <div class="form-group">
           <label class="form-label">Caliber <span style="color:var(--color-red)">*</span></label>
-          <input type="text" name="caliber" class="form-input" placeholder="e.g. 5.56 NATO, 9mm, .308" required maxlength="60" />
+          ${caliberSelectHTML()}
         </div>
         <div class="form-row">
           <div class="form-group">
@@ -1145,13 +1196,16 @@ window.SHTFModule = (() => {
         </div>
       </form>
     `)
+    bindCaliberSelect()
     document.getElementById('shtf-form').addEventListener('submit', async e => {
       e.preventDefault()
-      const fd  = new FormData(e.target)
+      const fd      = new FormData(e.target)
+      const caliber = resolveCaliberFromForm(fd)
+      if (!caliber) { Utils.showToast('Please select or enter a caliber.', 'error'); return }
       const qty = fd.get('quantity')
       await saveItem('shtf_ammo', {
         user_id:  _userId,
-        caliber:  fd.get('caliber').trim(),
+        caliber,
         quantity: qty ? parseInt(qty) : null,
         brand:    fd.get('brand').trim() || null,
         notes:    fd.get('notes').trim() || null,

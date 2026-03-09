@@ -212,7 +212,7 @@ if (siteSubtitleEl) siteSubtitleEl.textContent = user.name
   const tabBtns     = document.querySelectorAll('.tab-btn')
   const tabSections = document.querySelectorAll('.tab-section')
   const initialized = {}
-  const TAB_LABELS  = { loadout: 'Loadout', rangelog: 'Range Log', shtf: 'SHTF Tracker' }
+  const TAB_LABELS  = { loadout: 'Loadout', rangelog: 'Range Log', shtf: 'Supplies' }
 
   function activateTab(tabName) {
     tabBtns.forEach(b => {
