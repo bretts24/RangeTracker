@@ -286,11 +286,6 @@ window.LoadoutModule = (() => {
             🔧 Maintenance
             <span class="weapon-subsec-meta">${maintMeta}</span>
           </div>
-          <div class="weapon-subsec-actions">
-            <button class="btn btn-secondary btn-sm wm-clean-btn" data-weapon-id="${weapon.id}">+ Log Cleaning</button>
-            <button class="btn btn-secondary btn-sm wm-mal-btn" data-weapon-id="${weapon.id}">+ Malfunction</button>
-            <button class="btn btn-secondary btn-sm wm-part-btn" data-weapon-id="${weapon.id}">+ Replace Part</button>
-          </div>
           <span class="weapon-subsec-chevron" aria-hidden="true">▼</span>
         </div>
         <div class="weapon-card-maint" id="weapon-maint-${weapon.id}">${renderMaintSection(weapon.id)}</div>
@@ -1081,6 +1076,13 @@ window.LoadoutModule = (() => {
   function renderMaintSection(weaponId) {
     const maint = _maintMap[weaponId] || { cleanings: [], malfunctions: [], parts: [] }
 
+    const toolbar = `
+      <div class="maint-toolbar">
+        <button class="btn btn-secondary btn-sm wm-clean-btn" data-weapon-id="${weaponId}">+ Log Cleaning</button>
+        <button class="btn btn-secondary btn-sm wm-mal-btn" data-weapon-id="${weaponId}">+ Malfunction</button>
+        <button class="btn btn-secondary btn-sm wm-part-btn" data-weapon-id="${weaponId}">+ Replace Part</button>
+      </div>`
+
     const cleaningsTable = maint.cleanings.length === 0
       ? '<p class="maint-empty">No cleaning records yet.</p>'
       : `<div style="overflow-x:auto;"><table class="data-table data-table-sm">
@@ -1125,6 +1127,7 @@ window.LoadoutModule = (() => {
           </tbody></table></div>`
 
     return `
+      ${toolbar}
       <div class="maint-subsec"><div class="maint-subsec-title">Cleanings</div>${cleaningsTable}</div>
       <div class="maint-subsec"><div class="maint-subsec-title">Malfunctions</div>${malTable}</div>
       <div class="maint-subsec"><div class="maint-subsec-title">Parts Replaced</div>${partsTable}</div>

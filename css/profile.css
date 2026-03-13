@@ -1153,6 +1153,15 @@
 }
 
 /* ── Maintenance Section Styles ────────────────────────────── */
+.maint-toolbar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: var(--space-sm) var(--space-lg);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg-panel);
+}
+
 .maint-subsec {
   padding: var(--space-md) var(--space-lg);
   border-bottom: 1px solid var(--color-border);
