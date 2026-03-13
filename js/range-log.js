@@ -24,10 +24,12 @@ window.RangeLogModule = (() => {
   let _userId = null
   let _initialized = false
   let _sessions = []
+  let _drySessions = []
   let _loadoutWeapons = []
   let _ammoStock = []
   let _searchQuery = ''
   let _dateFilter = 'all'
+  let _viewMode = 'live'  // 'live' or 'dry'
 
   const WEAPON_CATEGORY_LABELS = {
     rifle: 'Rifle', pistol: 'Pistol', shotgun: 'Shotgun',
@@ -46,13 +48,20 @@ window.RangeLogModule = (() => {
     _userId = userId
     _initialized = true
 
-    document.getElementById('rangelog-add-btn').addEventListener('click', openAddSessionModal)
+    document.getElementById('rangelog-add-btn').addEventListener('click', () => {
+      if (_viewMode === 'dry') openAddDryFireModal()
+      else openAddSessionModal()
+    })
     document.getElementById('rangelog-export-btn')?.addEventListener('click', exportToCSV)
+
+    // View toggle (Live Fire / Dry Fire)
+    document.getElementById('rangelog-live-btn')?.addEventListener('click', () => switchView('live'))
+    document.getElementById('rangelog-dry-btn')?.addEventListener('click', () => switchView('dry'))
 
     // Show skeleton immediately
     document.getElementById('rangelog-content').innerHTML = Utils.skeletonCards(3)
 
-    await Promise.all([loadSessions(), loadLoadoutWeapons(), loadAmmoStock()])
+    await Promise.all([loadSessions(), loadLoadoutWeapons(), loadAmmoStock(), loadDryFireSessions()])
   }
 
   async function loadLoadoutWeapons() {
@@ -1273,6 +1282,263 @@ window.RangeLogModule = (() => {
       Utils.closeModal()
       Utils.showToast('Session logged!')
       await loadSessions()
+    })
+  }
+
+  // ── View Switch (Live Fire / Dry Fire) ───────────────────────
+
+  function switchView(mode) {
+    _viewMode = mode
+    document.getElementById('rangelog-live-btn')?.classList.toggle('active', mode === 'live')
+    document.getElementById('rangelog-dry-btn')?.classList.toggle('active', mode === 'dry')
+
+    const addBtn    = document.getElementById('rangelog-add-btn')
+    const exportBtn = document.getElementById('rangelog-export-btn')
+    if (addBtn)    addBtn.textContent   = mode === 'dry' ? '+ Dry Fire Session' : '+ New Session'
+    if (exportBtn) exportBtn.style.display = mode === 'dry' ? 'none' : ''
+
+    if (mode === 'live') {
+      renderStats()
+      renderSessions()
+    } else {
+      renderDryFireStats()
+      renderDryFireSessions()
+    }
+  }
+
+  // ── Dry Fire Log ──────────────────────────────────────────────
+
+  async function loadDryFireSessions() {
+    const { data } = await window.sb
+      .from('dry_fire_sessions')
+      .select('*, loadout_items(name)')
+      .eq('user_id', _userId)
+      .order('session_date', { ascending: false })
+    _drySessions = data || []
+  }
+
+  function renderDryFireStats() {
+    const statsEl = document.getElementById('rangelog-stats')
+    if (!statsEl) return
+
+    if (_drySessions.length === 0) { statsEl.innerHTML = ''; return }
+
+    const totalMins     = _drySessions.reduce((s, d) => s + (d.duration_minutes || 0), 0)
+    const now           = new Date()
+    const monthSessions = _drySessions.filter(d => {
+      const dt = new Date(d.session_date)
+      return dt.getFullYear() === now.getFullYear() && dt.getMonth() === now.getMonth()
+    }).length
+    const weaponCount = {}
+    _drySessions.forEach(d => {
+      const name = d.loadout_items?.name || d.weapon_used
+      if (name) weaponCount[name] = (weaponCount[name] || 0) + 1
+    })
+    const topWeapon = Object.entries(weaponCount).sort((a, b) => b[1] - a[1])[0]
+
+    statsEl.innerHTML = `
+      <div class="stats-panel">
+        <div class="stat-card"><div class="stat-value">${_drySessions.length}</div><div class="stat-label">Sessions</div></div>
+        <div class="stat-card"><div class="stat-value">${totalMins}</div><div class="stat-label">Total Minutes</div></div>
+        <div class="stat-card"><div class="stat-value">${monthSessions}</div><div class="stat-label">This Month</div></div>
+        ${topWeapon ? `<div class="stat-card"><div class="stat-value" style="font-size:clamp(0.7rem,2vw,0.9rem);">${Utils.esc(topWeapon[0])}</div><div class="stat-label">Top Weapon</div></div>` : ''}
+      </div>`
+  }
+
+  function renderDryFireSessions() {
+    const container = document.getElementById('rangelog-content')
+    if (!container) return
+
+    if (_drySessions.length === 0) {
+      container.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">🎯</div>
+          <div class="empty-state-title">No Dry Fire Sessions Yet</div>
+          <div class="empty-state-desc">Log dry fire sessions to track your training volume alongside live fire.</div>
+          <button class="btn btn-primary empty-state-cta" id="dry-empty-add-btn">+ Dry Fire Session</button>
+        </div>`
+      document.getElementById('dry-empty-add-btn')?.addEventListener('click', openAddDryFireModal)
+      return
+    }
+
+    container.innerHTML = _drySessions.map(d => {
+      const weaponName = d.loadout_items?.name || d.weapon_used || '—'
+      return `
+        <div class="session-card">
+          <div class="session-header" style="cursor:default;">
+            <div>
+              <div class="session-title">${Utils.formatDateShort(d.session_date)}</div>
+              <div class="session-meta">${Utils.esc(weaponName)}${d.duration_minutes ? ` · ${d.duration_minutes} min` : ''}${d.snap_caps_used ? ` · ${d.snap_caps_used} snap caps` : ''}</div>
+              ${d.focus_area ? `<div class="session-meta" style="margin-top:2px;"><strong>Focus:</strong> ${Utils.esc(d.focus_area)}</div>` : ''}
+              ${d.drills_worked ? `<div class="session-meta" style="margin-top:2px;">Drills: ${Utils.esc(d.drills_worked)}</div>` : ''}
+              ${d.notes ? `<div class="session-meta" style="font-style:italic;margin-top:2px;">${Utils.esc(d.notes)}</div>` : ''}
+            </div>
+            <div class="session-header-right">
+              <button class="btn btn-secondary btn-sm dry-edit-btn" data-id="${d.id}">Edit</button>
+              <button class="btn btn-danger btn-sm dry-del-btn" data-id="${d.id}">✕</button>
+            </div>
+          </div>
+        </div>`
+    }).join('')
+
+    container.querySelectorAll('.dry-edit-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const sess = _drySessions.find(d => String(d.id) === btn.dataset.id)
+        if (sess) openEditDryFireModal(sess)
+      })
+    })
+    container.querySelectorAll('.dry-del-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        Utils.confirmDialog('Delete this dry fire session?', async () => {
+          await window.sb.from('dry_fire_sessions').delete().eq('id', btn.dataset.id)
+          Utils.showToast('Session deleted.')
+          await loadDryFireSessions()
+          renderDryFireStats()
+          renderDryFireSessions()
+        }, 'Delete')
+      })
+    })
+  }
+
+  function dryFireFormHTML(d = {}) {
+    const weaponOptions = _loadoutWeapons.map(w =>
+      `<option value="${w.id}" ${d.loadout_item_id === w.id ? 'selected' : ''}>${Utils.esc(w.name)}</option>`
+    ).join('')
+
+    return `
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Date <span style="color:var(--color-red)">*</span></label>
+          <input type="date" name="session_date" class="form-input" value="${d.session_date || new Date().toISOString().split('T')[0]}" required />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Duration (minutes)</label>
+          <input type="number" name="duration_minutes" class="form-input" value="${d.duration_minutes || ''}" min="1" placeholder="e.g. 20" />
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Weapon Used</label>
+        ${_loadoutWeapons.length > 0 ? `
+          <select name="loadout_item_id" class="form-select" id="dry-weapon-select">
+            <option value="">— Select from Loadout —</option>
+            ${weaponOptions}
+            <option value="__manual__" ${!d.loadout_item_id && d.weapon_used ? 'selected' : ''}>✏ Enter Manually</option>
+          </select>
+          <input type="text" name="weapon_used" id="dry-weapon-text" class="form-input"
+            style="margin-top:8px;display:${!d.loadout_item_id && d.weapon_used ? 'block' : 'none'};"
+            value="${Utils.esc(d.weapon_used || '')}" placeholder="e.g. Glock 19" maxlength="100" />` :
+          `<input type="text" name="weapon_used" class="form-input" value="${Utils.esc(d.weapon_used || '')}" placeholder="e.g. Glock 19" maxlength="100" />`
+        }
+      </div>
+      <div class="form-group">
+        <label class="form-label">Focus Area</label>
+        <input type="text" name="focus_area" class="form-input" value="${Utils.esc(d.focus_area || '')}" placeholder="e.g. Draw stroke, trigger reset" maxlength="200" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Drills Worked</label>
+        <input type="text" name="drills_worked" class="form-input" value="${Utils.esc(d.drills_worked || '')}" placeholder="e.g. Bill Drill, AIWB presentation, mag changes" maxlength="300" />
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Snap Caps Used</label>
+          <input type="number" name="snap_caps_used" class="form-input" value="${d.snap_caps_used || ''}" min="0" placeholder="0" />
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Notes</label>
+        <textarea name="notes" class="form-textarea" placeholder="Observations, issues, improvements…">${Utils.esc(d.notes || '')}</textarea>
+      </div>`
+  }
+
+  function bindDryWeaponToggle() {
+    const sel = document.getElementById('dry-weapon-select')
+    const txt = document.getElementById('dry-weapon-text')
+    if (!sel || !txt) return
+    sel.addEventListener('change', () => {
+      txt.style.display = sel.value === '__manual__' ? 'block' : 'none'
+      if (sel.value !== '__manual__') txt.value = ''
+    })
+  }
+
+  function openAddDryFireModal() {
+    Utils.openModal('Log Dry Fire Session', `
+      <form id="dry-fire-form">
+        ${dryFireFormHTML()}
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="Utils.closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Log Session</button>
+        </div>
+      </form>`)
+    bindDryWeaponToggle()
+    document.getElementById('dry-fire-form').addEventListener('submit', async e => {
+      e.preventDefault()
+      const fd  = new FormData(e.target)
+      const btn = e.target.querySelector('[type=submit]')
+      btn.disabled = true; btn.textContent = 'Saving…'
+
+      const selVal       = fd.get('loadout_item_id') || ''
+      const isManual     = selVal === '__manual__' || selVal === ''
+      const loadoutId    = !isManual ? selVal : null
+      const selectedW    = loadoutId ? _loadoutWeapons.find(w => w.id === loadoutId) : null
+      const weaponText   = loadoutId ? (selectedW?.name || null) : (fd.get('weapon_used')?.trim() || null)
+      const dur          = fd.get('duration_minutes')
+      const caps         = fd.get('snap_caps_used')
+
+      const { error } = await window.sb.from('dry_fire_sessions').insert({
+        user_id: _userId, session_date: fd.get('session_date'),
+        duration_minutes: dur ? parseInt(dur) : null,
+        loadout_item_id: loadoutId, weapon_used: weaponText,
+        focus_area: fd.get('focus_area').trim() || null,
+        drills_worked: fd.get('drills_worked').trim() || null,
+        snap_caps_used: caps ? parseInt(caps) : null,
+        notes: fd.get('notes').trim() || null,
+      })
+      if (error) { Utils.showToast('Save failed: ' + error.message, 'error'); btn.disabled = false; btn.textContent = 'Log Session'; return }
+      Utils.closeModal(); Utils.showToast('Dry fire session logged!')
+      await loadDryFireSessions()
+      renderDryFireStats()
+      renderDryFireSessions()
+    })
+  }
+
+  function openEditDryFireModal(d) {
+    Utils.openModal('Edit Dry Fire Session', `
+      <form id="dry-fire-form">
+        ${dryFireFormHTML(d)}
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="Utils.closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="dry-edit-submit">Save Changes</button>
+        </div>
+      </form>`)
+    bindDryWeaponToggle()
+    document.getElementById('dry-fire-form').addEventListener('submit', async e => {
+      e.preventDefault()
+      const fd  = new FormData(e.target)
+      const btn = document.getElementById('dry-edit-submit')
+      btn.disabled = true; btn.textContent = 'Saving…'
+
+      const selVal     = fd.get('loadout_item_id') || ''
+      const isManual   = selVal === '__manual__' || selVal === ''
+      const loadoutId  = !isManual ? selVal : null
+      const selectedW  = loadoutId ? _loadoutWeapons.find(w => w.id === loadoutId) : null
+      const weaponText = loadoutId ? (selectedW?.name || null) : (fd.get('weapon_used')?.trim() || null)
+      const dur        = fd.get('duration_minutes')
+      const caps       = fd.get('snap_caps_used')
+
+      const { error } = await window.sb.from('dry_fire_sessions').update({
+        session_date: fd.get('session_date'),
+        duration_minutes: dur ? parseInt(dur) : null,
+        loadout_item_id: loadoutId, weapon_used: weaponText,
+        focus_area: fd.get('focus_area').trim() || null,
+        drills_worked: fd.get('drills_worked').trim() || null,
+        snap_caps_used: caps ? parseInt(caps) : null,
+        notes: fd.get('notes').trim() || null,
+      }).eq('id', d.id)
+      if (error) { Utils.showToast('Save failed: ' + error.message, 'error'); btn.disabled = false; btn.textContent = 'Save Changes'; return }
+      Utils.closeModal(); Utils.showToast('Session updated!')
+      await loadDryFireSessions()
+      renderDryFireStats()
+      renderDryFireSessions()
     })
   }
 

@@ -194,10 +194,11 @@ window.SHTFModule = (() => {
     const todayStr = now.toISOString().split('T')[0]
     const in15Str  = in15.toISOString().split('T')[0]
 
-    const [foodRes, waterRes, seedsRes] = await Promise.all([
+    const [foodRes, waterRes, seedsRes, fuelAlertRes] = await Promise.all([
       window.sb.from('shtf_food').select('item, expiry_date').eq('user_id', _userId).not('expiry_date', 'is', null),
       window.sb.from('shtf_water').select('item, rotate_date').eq('user_id', _userId).not('rotate_date', 'is', null),
       window.sb.from('shtf_seeds').select('seed_name, rotate_by_date').eq('user_id', _userId).not('rotate_by_date', 'is', null),
+      window.sb.from('shtf_fuel_storage').select('fuel_type, rotate_date').eq('user_id', _userId).not('rotate_date', 'is', null),
     ])
 
     const expired  = []
@@ -218,13 +219,18 @@ window.SHTFModule = (() => {
       if (i.rotate_by_date < todayStr) expired.push(e)
       else if (i.rotate_by_date <= in15Str) expiring.push(e)
     })
+    ;(fuelAlertRes.data || []).forEach(i => {
+      const e = { name: i.fuel_type + ' fuel', tab: 'power', date: i.rotate_date }
+      if (i.rotate_date < todayStr) expired.push(e)
+      else if (i.rotate_date <= in15Str) expiring.push(e)
+    })
 
     if (expired.length === 0 && expiring.length === 0) {
       alertsEl.innerHTML = ''
       return
     }
 
-    const TAB_TAG = { food: 'Food', water: 'Water', seeds: 'Seeds' }
+    const TAB_TAG = { food: 'Food', water: 'Water', seeds: 'Seeds', power: 'Power' }
     const fmtDate = d => {
       const [, mo, da] = d.split('-')
       return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][parseInt(mo) - 1] + ' ' + parseInt(da)
@@ -277,15 +283,23 @@ window.SHTFModule = (() => {
     const todayStr = now.toISOString().split('T')[0]
 
     const tableTypes = ['food', 'water', 'medical', 'gear', 'ammo', 'seeds', 'prepplans', 'bugout']
-    const results = await Promise.all(
-      tableTypes.map(type =>
-        window.sb.from(CATEGORY_META[type].table).select('*').eq('user_id', _userId)
-          .then(({ data }) => ({ type, items: data || [] }))
-      )
-    )
+    const [results, powerAssetsRes, fuelRes, skillsRes] = await Promise.all([
+      Promise.all(
+        tableTypes.map(type =>
+          window.sb.from(CATEGORY_META[type].table).select('*').eq('user_id', _userId)
+            .then(({ data }) => ({ type, items: data || [] }))
+        )
+      ),
+      window.sb.from('shtf_power_assets').select('id').eq('user_id', _userId),
+      window.sb.from('shtf_fuel_storage').select('id').eq('user_id', _userId),
+      window.sb.from('operator_skills').select('id').eq('user_id', _userId),
+    ])
 
     const counts    = {}
     const alertsMap = {}
+
+    counts['power'] = (powerAssetsRes.data?.length || 0) + (fuelRes.data?.length || 0)
+    counts['skills'] = skillsRes.data?.length || 0
 
     results.forEach(({ type, items }) => {
       counts[type] = items.length
@@ -375,6 +389,18 @@ window.SHTFModule = (() => {
         ${supplyTypes.map(tileHTML).join('')}
         ${tileHTML('prepplans')}
         ${tileHTML('bugout')}
+        <div class="readiness-tile ${counts['power'] === 0 ? 'empty' : 'has-items'}" role="button" tabindex="0"
+          aria-label="View Power" data-nav="power" style="cursor:pointer;">
+          <div style="font-size:1.5rem;margin-bottom:var(--space-xs);">⚡</div>
+          <div style="font-family:var(--font-mono);font-size:0.75rem;letter-spacing:0.06em;text-transform:uppercase;font-weight:700;margin-bottom:2px;">Power</div>
+          <div style="font-size:0.8rem;color:var(--color-text-muted);">${counts['power'] === 0 ? 'No items' : `${counts['power']} item${counts['power'] !== 1 ? 's' : ''}`}</div>
+        </div>
+        <div class="readiness-tile ${counts['skills'] === 0 ? 'empty' : 'has-items'}" role="button" tabindex="0"
+          aria-label="View Skills" data-nav="skills" style="cursor:pointer;">
+          <div style="font-size:1.5rem;margin-bottom:var(--space-xs);">🎖</div>
+          <div style="font-family:var(--font-mono);font-size:0.75rem;letter-spacing:0.06em;text-transform:uppercase;font-weight:700;margin-bottom:2px;">Skills</div>
+          <div style="font-size:0.8rem;color:var(--color-text-muted);">${counts['skills'] === 0 ? 'No items' : `${counts['skills']} skill${counts['skills'] !== 1 ? 's' : ''}`}</div>
+        </div>
       </div>
     `
 
@@ -393,6 +419,8 @@ window.SHTFModule = (() => {
     if (type === 'prepplans') return loadPrepPlans()
     if (type === 'bugout')    return loadBugoutPlans()
     if (type === 'ammo')      return loadAmmoSection()
+    if (type === 'power')     return loadPowerSection()
+    if (type === 'skills')    return loadSkillsSection()
 
     const meta      = CATEGORY_META[type]
     const container = document.getElementById(`shtf-${type}-content`)
@@ -1023,20 +1051,27 @@ window.SHTFModule = (() => {
 
   // ── Edit Modal Dispatcher ─────────────────────────────────────
 
+  // Maps type key → cache key (for types whose cache key differs)
+  const EDIT_CACHE_KEY = { power_asset: 'power_assets' }
+
   function openEditModal(type, id) {
-    const items = _dataCache[type] || []
-    const item  = items.find(i => String(i.id) === String(id))
+    const cacheKey = EDIT_CACHE_KEY[type] || type
+    const items    = _dataCache[cacheKey] || []
+    const item     = items.find(i => String(i.id) === String(id))
     if (!item) { Utils.showToast('Could not find item.', 'error'); return }
 
     const editFns = {
-      food:      () => editFoodModal(item),
-      water:     () => editWaterModal(item),
-      medical:   () => editSupplyModal('medical', 'Medical Item',  item),
-      gear:      () => editSupplyModal('gear',    'Gear Item',     item),
-      ammo:      () => editAmmoModal(item),
-      seeds:     () => editSeedsModal(item),
-      prepplans: () => editPrepPlanModal(item),
-      bugout:    () => editBugoutModal(item),
+      food:        () => editFoodModal(item),
+      water:       () => editWaterModal(item),
+      medical:     () => editSupplyModal('medical', 'Medical Item',  item),
+      gear:        () => editSupplyModal('gear',    'Gear Item',     item),
+      ammo:        () => editAmmoModal(item),
+      seeds:       () => editSeedsModal(item),
+      prepplans:   () => editPrepPlanModal(item),
+      bugout:      () => editBugoutModal(item),
+      power_asset: () => editPowerAssetModal(item),
+      fuel:        () => editFuelModal(item),
+      skills:      () => editSkillModal(item),
     }
     const fn = editFns[type]
     if (fn) fn()
@@ -1429,14 +1464,17 @@ window.SHTFModule = (() => {
 
   function openAddModal(type) {
     const forms = {
-      food:      addFoodForm,
-      water:     addWaterForm,
-      medical:   addSupplyForm('medical', 'Medical Item'),
-      gear:      addSupplyForm('gear',    'Gear Item'),
-      ammo:      addAmmoForm,
-      prepplans: addPrepPlanForm,
-      bugout:    addBugoutForm,
-      seeds:     addSeedBankForm,
+      food:        addFoodForm,
+      water:       addWaterForm,
+      medical:     addSupplyForm('medical', 'Medical Item'),
+      gear:        addSupplyForm('gear',    'Gear Item'),
+      ammo:        addAmmoForm,
+      prepplans:   addPrepPlanForm,
+      bugout:      addBugoutForm,
+      seeds:       addSeedBankForm,
+      power_asset: addPowerAssetForm,
+      fuel:        addFuelForm,
+      skills:      addSkillForm,
     }
     const fn = forms[type]
     if (fn) fn()
@@ -1847,6 +1885,638 @@ window.SHTFModule = (() => {
         storage_method:   fd.get('storage_method').trim() || null,
         notes:            fd.get('notes').trim() || null,
       }, 'seeds', e.target)
+    })
+  }
+
+  // ── Power & Energy ────────────────────────────────────────────
+
+  async function loadPowerSection() {
+    const container = document.getElementById('shtf-power-content')
+    if (!container) return
+    container.innerHTML = Utils.skeletonRows(3)
+    try {
+      const [assetsRes, fuelRes] = await Promise.all([
+        window.sb.from('shtf_power_assets').select('*').eq('user_id', _userId).order('created_at', { ascending: true }),
+        window.sb.from('shtf_fuel_storage').select('*').eq('user_id', _userId).order('created_at', { ascending: true }),
+      ])
+      _dataCache['power_assets'] = assetsRes.data || []
+      _dataCache['fuel']         = fuelRes.data   || []
+      renderPowerSection(_dataCache['power_assets'], _dataCache['fuel'], container)
+    } catch (err) {
+      container.innerHTML = '<p class="loading-text">Failed to load power data.</p>'
+    }
+  }
+
+  function renderPowerSection(assets, fuels, container) {
+    const actionBtns = (table, id, type) => `
+      <div style="display:flex;gap:4px;white-space:nowrap;">
+        <button class="btn btn-secondary btn-sm shtf-edit-btn" data-type="${type}" data-id="${id}" aria-label="Edit">Edit</button>
+        <button class="btn btn-danger btn-sm shtf-del-btn" data-table="${table}" data-id="${id}" data-type="${type}" aria-label="Remove">✕</button>
+      </div>`
+
+    const assetsHTML = assets.length === 0
+      ? '<p style="color:var(--color-text-muted);font-size:0.85rem;padding:var(--space-sm) 0;">No power assets logged.</p>'
+      : `<div style="overflow-x:auto;"><table class="data-table">
+          <thead><tr><th>Type</th><th>Name</th><th>Capacity</th><th>Fuel Type</th><th>Notes</th><th></th></tr></thead>
+          <tbody>${assets.map(a => `<tr>
+            <td>${Utils.esc(a.asset_type ? a.asset_type.replace('_', ' ') : '—')}</td>
+            <td>${Utils.esc(a.name)}</td>
+            <td>${a.capacity ? `${Utils.esc(String(a.capacity))} ${Utils.esc(a.capacity_unit || '')}` : '—'}</td>
+            <td>${Utils.esc(a.fuel_type || '—')}</td>
+            <td>${Utils.esc(a.notes || '—')}</td>
+            <td>${actionBtns('shtf_power_assets', a.id, 'power_asset')}</td>
+          </tr>`).join('')}</tbody>
+        </table></div>`
+
+    const now      = new Date()
+    const todayStr = now.toISOString().split('T')[0]
+    const in15     = new Date(now); in15.setDate(in15.getDate() + 15)
+    const in15Str  = in15.toISOString().split('T')[0]
+
+    const fuelsHTML = fuels.length === 0
+      ? '<p style="color:var(--color-text-muted);font-size:0.85rem;padding:var(--space-sm) 0;">No fuel storage logged.</p>'
+      : `<div style="overflow-x:auto;"><table class="data-table">
+          <thead><tr><th>Fuel Type</th><th>Quantity</th><th>Location</th><th>Rotate Date</th><th>Notes</th><th></th></tr></thead>
+          <tbody>${fuels.map(f => {
+            const rotClass = f.rotate_date
+              ? (f.rotate_date < todayStr ? 'expiry-past' : f.rotate_date <= in15Str ? 'expiry-soon' : '')
+              : ''
+            return `<tr>
+              <td>${Utils.esc(f.fuel_type)}</td>
+              <td>${f.quantity ? `${f.quantity} ${Utils.esc(f.quantity_unit || 'gal')}` : '—'}</td>
+              <td>${Utils.esc(f.location || '—')}</td>
+              <td class="${rotClass}">${f.rotate_date ? Utils.formatDateShort(f.rotate_date) : '—'}</td>
+              <td>${Utils.esc(f.notes || '—')}</td>
+              <td>${actionBtns('shtf_fuel_storage', f.id, 'fuel')}</td>
+            </tr>`
+          }).join('')}</tbody>
+        </table></div>`
+
+    container.innerHTML = `
+      <div class="power-section-wrap">
+        <div style="margin-bottom:var(--space-lg);">
+          <div class="section-heading" style="margin-bottom:var(--space-sm);">⚡ Power Assets</div>
+          ${assetsHTML}
+        </div>
+        <div>
+          <div class="section-heading" style="margin-bottom:var(--space-sm);">⛽ Fuel Storage</div>
+          ${fuelsHTML}
+        </div>
+      </div>`
+
+    container.querySelectorAll('.shtf-edit-btn').forEach(btn => {
+      btn.addEventListener('click', () => openEditModal(btn.dataset.type, btn.dataset.id))
+    })
+    container.querySelectorAll('.shtf-del-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const table = btn.dataset.table
+        const type  = btn.dataset.type
+        Utils.confirmDialog('Remove this item?', async () => {
+          await window.sb.from(table).delete().eq('id', btn.dataset.id)
+          Utils.showToast('Removed.')
+          invalidatePower()
+        }, 'Remove')
+      })
+    })
+  }
+
+  function invalidatePower() {
+    loadedTabs['power']    = false
+    loadedTabs['overview'] = false
+    delete _dataCache['power_assets']
+    delete _dataCache['fuel']
+    loadSubSection('power')
+  }
+
+  function addPowerAssetForm() {
+    Utils.openModal('Add Power Asset', `
+      <form id="shtf-form">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Asset Type <span style="color:var(--color-red)">*</span></label>
+            <select name="asset_type" class="form-select" required>
+              <option value="">— Select —</option>
+              <option value="generator">Generator</option>
+              <option value="solar_panel">Solar Panel</option>
+              <option value="battery_bank">Battery Bank</option>
+              <option value="inverter">Inverter</option>
+              <option value="charge_controller">Charge Controller</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Name / Model <span style="color:var(--color-red)">*</span></label>
+            <input type="text" name="name" class="form-input" placeholder="e.g. Champion 3500W, Goal Zero Yeti" required maxlength="120" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Capacity</label>
+            <input type="number" name="capacity" class="form-input" placeholder="e.g. 3500" min="0" step="0.01" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Unit</label>
+            <select name="capacity_unit" class="form-select">
+              <option value="watts">Watts</option>
+              <option value="Ah">Ah (Amp-hours)</option>
+              <option value="kWh">kWh</option>
+              <option value="kW">kW</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Fuel Type <span style="font-size:0.7em;color:var(--color-text-muted);">(generators)</span></label>
+          <select name="fuel_type" class="form-select">
+            <option value="">N/A</option>
+            <option value="gasoline">Gasoline</option>
+            <option value="diesel">Diesel</option>
+            <option value="propane">Propane</option>
+            <option value="dual_fuel">Dual Fuel</option>
+            <option value="solar">Solar</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Notes</label>
+          <textarea name="notes" class="form-textarea" placeholder="Model #, runtime, condition, storage location…"></textarea>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="Utils.closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Add Asset</button>
+        </div>
+      </form>
+    `)
+    document.getElementById('shtf-form').addEventListener('submit', async e => {
+      e.preventDefault()
+      const fd  = new FormData(e.target)
+      const btn = e.target.querySelector('[type=submit]')
+      btn.disabled = true; btn.textContent = 'Saving…'
+      const cap = fd.get('capacity')
+      const { error } = await window.sb.from('shtf_power_assets').insert({
+        user_id: _userId, asset_type: fd.get('asset_type'),
+        name: fd.get('name').trim(), capacity: cap ? parseFloat(cap) : null,
+        capacity_unit: fd.get('capacity_unit') || null,
+        fuel_type: fd.get('fuel_type') || null,
+        notes: fd.get('notes').trim() || null,
+      })
+      if (error) { Utils.showToast('Save failed: ' + error.message, 'error'); btn.disabled = false; btn.textContent = 'Add Asset'; return }
+      Utils.closeModal(); Utils.showToast('Asset added!')
+      invalidatePower()
+    })
+  }
+
+  function addFuelForm() {
+    Utils.openModal('Add Fuel Storage', `
+      <form id="shtf-form">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Fuel Type <span style="color:var(--color-red)">*</span></label>
+            <select name="fuel_type" class="form-select" required>
+              <option value="">— Select —</option>
+              <option value="gasoline">Gasoline</option>
+              <option value="diesel">Diesel</option>
+              <option value="propane">Propane</option>
+              <option value="kerosene">Kerosene</option>
+              <option value="ethanol">Ethanol</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Quantity</label>
+            <input type="number" name="quantity" class="form-input" placeholder="e.g. 25" min="0" step="0.1" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Unit</label>
+            <select name="quantity_unit" class="form-select">
+              <option value="gallons">Gallons</option>
+              <option value="liters">Liters</option>
+              <option value="lbs">Lbs</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Rotate Date</label>
+            <input type="date" name="rotate_date" class="form-input" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Storage Location</label>
+          <input type="text" name="location" class="form-input" placeholder="e.g. Shed, garage, outbuilding" maxlength="120" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Notes</label>
+          <textarea name="notes" class="form-textarea" placeholder="Container type, stabilizer used, etc."></textarea>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="Utils.closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Add Fuel</button>
+        </div>
+      </form>
+    `)
+    document.getElementById('shtf-form').addEventListener('submit', async e => {
+      e.preventDefault()
+      const fd  = new FormData(e.target)
+      const btn = e.target.querySelector('[type=submit]')
+      btn.disabled = true; btn.textContent = 'Saving…'
+      const qty = fd.get('quantity')
+      const { error } = await window.sb.from('shtf_fuel_storage').insert({
+        user_id: _userId, fuel_type: fd.get('fuel_type'),
+        quantity: qty ? parseFloat(qty) : null,
+        quantity_unit: fd.get('quantity_unit') || 'gallons',
+        rotate_date: fd.get('rotate_date') || null,
+        location: fd.get('location').trim() || null,
+        notes: fd.get('notes').trim() || null,
+      })
+      if (error) { Utils.showToast('Save failed: ' + error.message, 'error'); btn.disabled = false; btn.textContent = 'Add Fuel'; return }
+      Utils.closeModal(); Utils.showToast('Fuel storage added!')
+      invalidatePower()
+    })
+  }
+
+  function editPowerAssetModal(item) {
+    Utils.openModal('Edit Power Asset', `
+      <form id="shtf-edit-form">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Asset Type</label>
+            <select name="asset_type" class="form-select">
+              <option value="generator" ${item.asset_type==='generator'?'selected':''}>Generator</option>
+              <option value="solar_panel" ${item.asset_type==='solar_panel'?'selected':''}>Solar Panel</option>
+              <option value="battery_bank" ${item.asset_type==='battery_bank'?'selected':''}>Battery Bank</option>
+              <option value="inverter" ${item.asset_type==='inverter'?'selected':''}>Inverter</option>
+              <option value="charge_controller" ${item.asset_type==='charge_controller'?'selected':''}>Charge Controller</option>
+              <option value="other" ${item.asset_type==='other'?'selected':''}>Other</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Name / Model</label>
+            <input type="text" name="name" class="form-input" value="${Utils.esc(item.name)}" required maxlength="120" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Capacity</label>
+            <input type="number" name="capacity" class="form-input" value="${item.capacity ?? ''}" min="0" step="0.01" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Unit</label>
+            <select name="capacity_unit" class="form-select">
+              <option value="watts" ${item.capacity_unit==='watts'?'selected':''}>Watts</option>
+              <option value="Ah" ${item.capacity_unit==='Ah'?'selected':''}>Ah</option>
+              <option value="kWh" ${item.capacity_unit==='kWh'?'selected':''}>kWh</option>
+              <option value="kW" ${item.capacity_unit==='kW'?'selected':''}>kW</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Fuel Type</label>
+          <select name="fuel_type" class="form-select">
+            <option value="" ${!item.fuel_type?'selected':''}>N/A</option>
+            <option value="gasoline" ${item.fuel_type==='gasoline'?'selected':''}>Gasoline</option>
+            <option value="diesel" ${item.fuel_type==='diesel'?'selected':''}>Diesel</option>
+            <option value="propane" ${item.fuel_type==='propane'?'selected':''}>Propane</option>
+            <option value="dual_fuel" ${item.fuel_type==='dual_fuel'?'selected':''}>Dual Fuel</option>
+            <option value="solar" ${item.fuel_type==='solar'?'selected':''}>Solar</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Notes</label>
+          <textarea name="notes" class="form-textarea">${Utils.esc(item.notes || '')}</textarea>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="Utils.closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="shtf-edit-submit">Save Changes</button>
+        </div>
+      </form>
+    `)
+    document.getElementById('shtf-edit-form').addEventListener('submit', async e => {
+      e.preventDefault()
+      const fd  = new FormData(e.target)
+      const btn = document.getElementById('shtf-edit-submit')
+      btn.disabled = true; btn.textContent = 'Saving…'
+      const cap = fd.get('capacity')
+      const { error } = await window.sb.from('shtf_power_assets').update({
+        asset_type: fd.get('asset_type'), name: fd.get('name').trim(),
+        capacity: cap ? parseFloat(cap) : null, capacity_unit: fd.get('capacity_unit') || null,
+        fuel_type: fd.get('fuel_type') || null, notes: fd.get('notes').trim() || null,
+      }).eq('id', item.id)
+      if (error) { Utils.showToast('Save failed: ' + error.message, 'error'); btn.disabled = false; btn.textContent = 'Save Changes'; return }
+      Utils.closeModal(); Utils.showToast('Updated!')
+      invalidatePower()
+    })
+  }
+
+  function editFuelModal(item) {
+    Utils.openModal('Edit Fuel Storage', `
+      <form id="shtf-edit-form">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Fuel Type</label>
+            <select name="fuel_type" class="form-select">
+              <option value="gasoline" ${item.fuel_type==='gasoline'?'selected':''}>Gasoline</option>
+              <option value="diesel" ${item.fuel_type==='diesel'?'selected':''}>Diesel</option>
+              <option value="propane" ${item.fuel_type==='propane'?'selected':''}>Propane</option>
+              <option value="kerosene" ${item.fuel_type==='kerosene'?'selected':''}>Kerosene</option>
+              <option value="ethanol" ${item.fuel_type==='ethanol'?'selected':''}>Ethanol</option>
+              <option value="other" ${item.fuel_type==='other'?'selected':''}>Other</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Quantity</label>
+            <input type="number" name="quantity" class="form-input" value="${item.quantity ?? ''}" min="0" step="0.1" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Unit</label>
+            <select name="quantity_unit" class="form-select">
+              <option value="gallons" ${item.quantity_unit==='gallons'?'selected':''}>Gallons</option>
+              <option value="liters" ${item.quantity_unit==='liters'?'selected':''}>Liters</option>
+              <option value="lbs" ${item.quantity_unit==='lbs'?'selected':''}>Lbs</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Rotate Date</label>
+            <input type="date" name="rotate_date" class="form-input" value="${Utils.esc(item.rotate_date || '')}" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Storage Location</label>
+          <input type="text" name="location" class="form-input" value="${Utils.esc(item.location || '')}" maxlength="120" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Notes</label>
+          <textarea name="notes" class="form-textarea">${Utils.esc(item.notes || '')}</textarea>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="Utils.closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="shtf-edit-submit">Save Changes</button>
+        </div>
+      </form>
+    `)
+    document.getElementById('shtf-edit-form').addEventListener('submit', async e => {
+      e.preventDefault()
+      const fd  = new FormData(e.target)
+      const btn = document.getElementById('shtf-edit-submit')
+      btn.disabled = true; btn.textContent = 'Saving…'
+      const qty = fd.get('quantity')
+      const { error } = await window.sb.from('shtf_fuel_storage').update({
+        fuel_type: fd.get('fuel_type'), quantity: qty ? parseFloat(qty) : null,
+        quantity_unit: fd.get('quantity_unit') || 'gallons',
+        rotate_date: fd.get('rotate_date') || null,
+        location: fd.get('location').trim() || null, notes: fd.get('notes').trim() || null,
+      }).eq('id', item.id)
+      if (error) { Utils.showToast('Save failed: ' + error.message, 'error'); btn.disabled = false; btn.textContent = 'Save Changes'; return }
+      Utils.closeModal(); Utils.showToast('Updated!')
+      invalidatePower()
+    })
+  }
+
+  // ── Skills Registry ───────────────────────────────────────────
+
+  const SKILL_CATEGORIES = ['medical', 'comms', 'mechanical', 'agricultural', 'tactical', 'navigation', 'trades', 'other']
+  const SKILL_CATEGORY_LABELS = {
+    medical: 'Medical / TCCC', comms: 'Communications / HAM',
+    mechanical: 'Mechanical', agricultural: 'Agricultural',
+    tactical: 'Tactical', navigation: 'Navigation',
+    trades: 'Trades', other: 'Other',
+  }
+  const PROFICIENCY_LABELS = { trained: 'Trained', competent: 'Competent', expert: 'Expert' }
+
+  async function loadSkillsSection() {
+    const container = document.getElementById('shtf-skills-content')
+    if (!container) return
+    container.innerHTML = Utils.skeletonRows(3)
+    try {
+      const { data, error } = await window.sb
+        .from('operator_skills').select('*').eq('user_id', _userId)
+        .order('skill_category').order('created_at', { ascending: true })
+      if (error) { container.innerHTML = '<p class="loading-text">Error: ' + Utils.esc(error.message) + '</p>'; return }
+      _dataCache['skills'] = data || []
+      renderSkillsSection(data || [], container)
+    } catch (err) {
+      container.innerHTML = '<p class="loading-text">Failed to load skills.</p>'
+    }
+  }
+
+  function renderSkillsSection(skills, container) {
+    if (skills.length === 0) {
+      container.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">🎖</div>
+          <div class="empty-state-title">No Skills Logged</div>
+          <div class="empty-state-desc">Document certifications and skills to track team capability and identify gaps.</div>
+        </div>`
+      return
+    }
+
+    const now      = new Date()
+    const todayStr = now.toISOString().split('T')[0]
+    const in90     = new Date(now); in90.setDate(in90.getDate() + 90)
+    const in90Str  = in90.toISOString().split('T')[0]
+
+    const profBadge = (level) => {
+      const color = level === 'expert' ? 'var(--color-green)' : level === 'competent' ? '#4a9eff' : 'var(--color-amber)'
+      return `<span style="background:${color}20;color:${color};border:1px solid ${color}40;padding:1px 6px;border-radius:3px;font-size:0.7rem;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;">${PROFICIENCY_LABELS[level] || level}</span>`
+    }
+
+    const grouped = {}
+    SKILL_CATEGORIES.forEach(c => { grouped[c] = [] })
+    skills.forEach(s => {
+      const cat = SKILL_CATEGORIES.includes(s.skill_category) ? s.skill_category : 'other'
+      grouped[cat].push(s)
+    })
+
+    const sectionsHTML = SKILL_CATEGORIES.map(cat => {
+      const items = grouped[cat] || []
+      if (items.length === 0) return ''
+      const rows = items.map(s => {
+        const expiryClass = s.cert_expiry
+          ? (s.cert_expiry < todayStr ? 'expiry-past' : s.cert_expiry <= in90Str ? 'expiry-soon' : '')
+          : ''
+        return `<tr>
+          <td>${Utils.esc(s.skill_name)}</td>
+          <td>${profBadge(s.skill_proficiency || s.proficiency_level)}</td>
+          <td>${Utils.esc(s.certification_org || '—')}</td>
+          <td>${s.cert_date ? Utils.formatDateShort(s.cert_date) : '—'}</td>
+          <td class="${expiryClass}">${s.cert_expiry ? Utils.formatDateShort(s.cert_expiry) : '—'}</td>
+          <td>${Utils.esc(s.notes || '—')}</td>
+          <td style="white-space:nowrap;">
+            <button class="btn btn-secondary btn-sm shtf-edit-btn" data-type="skills" data-id="${s.id}">Edit</button>
+            <button class="btn btn-danger btn-sm shtf-del-btn" data-table="operator_skills" data-id="${s.id}" data-type="skills" style="margin-left:4px;">✕</button>
+          </td>
+        </tr>`
+      }).join('')
+      return `
+        <div style="margin-bottom:var(--space-lg);">
+          <div class="section-heading" style="margin-bottom:var(--space-sm);">${SKILL_CATEGORY_LABELS[cat]}</div>
+          <div style="overflow-x:auto;">
+            <table class="data-table">
+              <thead><tr><th>Skill / Cert</th><th>Proficiency</th><th>Issuing Org</th><th>Cert Date</th><th>Expiry</th><th>Notes</th><th></th></tr></thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
+        </div>`
+    }).filter(Boolean).join('')
+
+    container.innerHTML = `<div class="skills-section-wrap">${sectionsHTML}</div>`
+
+    container.querySelectorAll('.shtf-edit-btn').forEach(btn => {
+      btn.addEventListener('click', () => openEditModal(btn.dataset.type, btn.dataset.id))
+    })
+    container.querySelectorAll('.shtf-del-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        Utils.confirmDialog('Remove this skill?', async () => {
+          await window.sb.from('operator_skills').delete().eq('id', btn.dataset.id)
+          Utils.showToast('Removed.')
+          loadedTabs['skills'] = false
+          loadedTabs['overview'] = false
+          delete _dataCache['skills']
+          loadSubSection('skills')
+        }, 'Remove')
+      })
+    })
+  }
+
+  function addSkillForm() {
+    Utils.openModal('Add Skill / Certification', `
+      <form id="shtf-form">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Category <span style="color:var(--color-red)">*</span></label>
+            <select name="skill_category" class="form-select" required>
+              ${SKILL_CATEGORIES.map(c => `<option value="${c}">${SKILL_CATEGORY_LABELS[c]}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Skill / Certification Name <span style="color:var(--color-red)">*</span></label>
+            <input type="text" name="skill_name" class="form-input" placeholder="e.g. TCCC, EMT-B, HAM General" required maxlength="120" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Proficiency</label>
+            <select name="proficiency_level" class="form-select">
+              <option value="trained">Trained</option>
+              <option value="competent" selected>Competent</option>
+              <option value="expert">Expert</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Issuing Org</label>
+            <input type="text" name="certification_org" class="form-input" placeholder="e.g. NAEMT, FCC, NRA" maxlength="100" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Cert Date</label>
+            <input type="date" name="cert_date" class="form-input" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Expiry Date</label>
+            <input type="date" name="cert_expiry" class="form-input" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Notes</label>
+          <textarea name="notes" class="form-textarea" placeholder="Course details, renewal requirements, etc."></textarea>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="Utils.closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Add Skill</button>
+        </div>
+      </form>
+    `)
+    document.getElementById('shtf-form').addEventListener('submit', async e => {
+      e.preventDefault()
+      const fd  = new FormData(e.target)
+      const btn = e.target.querySelector('[type=submit]')
+      btn.disabled = true; btn.textContent = 'Saving…'
+      const { error } = await window.sb.from('operator_skills').insert({
+        user_id: _userId, skill_category: fd.get('skill_category'),
+        skill_name: fd.get('skill_name').trim(),
+        proficiency_level: fd.get('proficiency_level'),
+        certification_org: fd.get('certification_org').trim() || null,
+        cert_date: fd.get('cert_date') || null,
+        cert_expiry: fd.get('cert_expiry') || null,
+        notes: fd.get('notes').trim() || null,
+      })
+      if (error) { Utils.showToast('Save failed: ' + error.message, 'error'); btn.disabled = false; btn.textContent = 'Add Skill'; return }
+      Utils.closeModal(); Utils.showToast('Skill added!')
+      loadedTabs['skills'] = false
+      loadedTabs['overview'] = false
+      delete _dataCache['skills']
+      loadSubSection('skills')
+    })
+  }
+
+  function editSkillModal(item) {
+    Utils.openModal('Edit Skill / Certification', `
+      <form id="shtf-edit-form">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Category</label>
+            <select name="skill_category" class="form-select">
+              ${SKILL_CATEGORIES.map(c => `<option value="${c}" ${item.skill_category===c?'selected':''}>${SKILL_CATEGORY_LABELS[c]}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Skill / Certification Name</label>
+            <input type="text" name="skill_name" class="form-input" value="${Utils.esc(item.skill_name)}" required maxlength="120" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Proficiency</label>
+            <select name="proficiency_level" class="form-select">
+              <option value="trained" ${item.proficiency_level==='trained'?'selected':''}>Trained</option>
+              <option value="competent" ${item.proficiency_level==='competent'?'selected':''}>Competent</option>
+              <option value="expert" ${item.proficiency_level==='expert'?'selected':''}>Expert</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Issuing Org</label>
+            <input type="text" name="certification_org" class="form-input" value="${Utils.esc(item.certification_org || '')}" maxlength="100" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Cert Date</label>
+            <input type="date" name="cert_date" class="form-input" value="${Utils.esc(item.cert_date || '')}" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Expiry Date</label>
+            <input type="date" name="cert_expiry" class="form-input" value="${Utils.esc(item.cert_expiry || '')}" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Notes</label>
+          <textarea name="notes" class="form-textarea">${Utils.esc(item.notes || '')}</textarea>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="Utils.closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="shtf-edit-submit">Save Changes</button>
+        </div>
+      </form>
+    `)
+    document.getElementById('shtf-edit-form').addEventListener('submit', async e => {
+      e.preventDefault()
+      const fd  = new FormData(e.target)
+      const btn = document.getElementById('shtf-edit-submit')
+      btn.disabled = true; btn.textContent = 'Saving…'
+      const { error } = await window.sb.from('operator_skills').update({
+        skill_category: fd.get('skill_category'), skill_name: fd.get('skill_name').trim(),
+        proficiency_level: fd.get('proficiency_level'),
+        certification_org: fd.get('certification_org').trim() || null,
+        cert_date: fd.get('cert_date') || null, cert_expiry: fd.get('cert_expiry') || null,
+        notes: fd.get('notes').trim() || null,
+      }).eq('id', item.id)
+      if (error) { Utils.showToast('Save failed: ' + error.message, 'error'); btn.disabled = false; btn.textContent = 'Save Changes'; return }
+      Utils.closeModal(); Utils.showToast('Updated!')
+      loadedTabs['skills'] = false
+      loadedTabs['overview'] = false
+      delete _dataCache['skills']
+      loadSubSection('skills')
     })
   }
 

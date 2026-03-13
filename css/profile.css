@@ -1044,4 +1044,429 @@
   .session-summary {
     gap: var(--space-sm);
   }
+
+  /* View toggle: stack on very small screens */
+  .view-toggle {
+    order: -1;
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+/* ── View Toggle (Live Fire / Dry Fire) ────────────────────── */
+.view-toggle {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.view-toggle-btn {
+  background: transparent;
+  border: none;
+  padding: 5px 14px;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+  white-space: nowrap;
+}
+
+.view-toggle-btn:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+
+.view-toggle-btn.active {
+  background: var(--color-green-dark);
+  color: var(--color-green-bright);
+  font-weight: 600;
+}
+
+/* ── Weapon Card Sub-sections (Maintenance & Dope) ─────────── */
+.weapon-subsec-header {
+  display: none;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: 8px var(--space-lg);
+  background: var(--color-bg-hover);
+  border-top: 1px solid var(--color-border);
+  cursor: pointer;
+  user-select: none;
+  transition: background var(--transition);
+}
+
+.weapon-card-open .weapon-subsec-header {
+  display: flex;
+}
+
+.weapon-subsec-header:hover {
+  background: var(--color-bg-panel);
+}
+
+.weapon-subsec-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  flex: 1;
+  min-width: 0;
+}
+
+.weapon-subsec-meta {
+  font-weight: 400;
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+}
+
+.weapon-subsec-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.weapon-subsec-chevron {
+  font-size: 0.65rem;
+  color: var(--color-text-muted);
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+
+/* Sub-section content accordion */
+.weapon-card-maint,
+.weapon-card-dope {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.35s ease;
+  border-top: 0px solid var(--color-border);
+}
+
+.weapon-maint-open .weapon-card-maint,
+.weapon-dope-open .weapon-card-dope {
+  max-height: 4000px;
+  border-top: 1px solid var(--color-border);
+}
+
+/* ── Maintenance Section Styles ────────────────────────────── */
+.maint-subsec {
+  padding: var(--space-md) var(--space-lg);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.maint-subsec:last-child {
+  border-bottom: none;
+}
+
+.maint-subsec-title {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-secondary);
+  margin-bottom: var(--space-sm);
+}
+
+.maint-empty {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  font-style: italic;
+  margin: 0;
+  padding: var(--space-xs) 0;
+}
+
+.data-table-sm td,
+.data-table-sm th {
+  padding: 5px 10px;
+  font-size: 0.8rem;
+}
+
+/* Malfunction type badges */
+.mal-badge {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 3px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-family: var(--font-mono);
+}
+
+.mal-FTF { background: rgba(255, 180, 0, 0.15); color: var(--color-amber); border: 1px solid var(--color-amber); }
+.mal-FTE { background: rgba(255, 120, 0, 0.15); color: #ff7a00; border: 1px solid #ff7a00; }
+.mal-double_feed { background: rgba(220, 60, 60, 0.15); color: var(--color-red); border: 1px solid var(--color-red); }
+.mal-stovepipe { background: rgba(100, 100, 200, 0.15); color: #8888dd; border: 1px solid #8888dd; }
+.mal-other { background: rgba(120, 120, 120, 0.15); color: var(--color-text-muted); border: 1px solid var(--color-border); }
+
+/* ── Dope Card Styles ──────────────────────────────────────── */
+.dope-card {
+  margin: var(--space-md) var(--space-lg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--color-bg-panel);
+}
+
+.dope-card + .dope-card {
+  margin-top: 0;
+}
+
+.dope-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg-hover);
+}
+
+.dope-card-info {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex: 1;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.dope-card-optic {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.dope-card-tag {
+  font-size: 0.72rem;
+  padding: 2px 7px;
+  border-radius: 3px;
+  background: var(--color-bg-panel);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+}
+
+.dope-card-tag.muted {
+  color: var(--color-text-muted);
+}
+
+.dope-card-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.dope-card-notes {
+  padding: var(--space-sm) var(--space-md);
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  font-style: italic;
+  border-top: 1px solid var(--color-border);
+}
+
+/* Dope data table */
+.dope-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+}
+
+.dope-table th {
+  text-align: left;
+  padding: 6px 12px;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.dope-table td {
+  padding: 7px 12px;
+  font-size: 0.85rem;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+}
+
+.dope-table tr:last-child td {
+  border-bottom: none;
+}
+
+.dope-dist {
+  font-size: 1rem !important;
+  font-weight: 700;
+  color: var(--color-green-bright) !important;
+}
+
+/* ── SHTF: Skills Proficiency Badges ───────────────────────── */
+.prof-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-family: var(--font-mono);
+}
+
+.prof-trained {
+  background: rgba(255, 180, 0, 0.15);
+  color: var(--color-amber);
+  border: 1px solid var(--color-amber);
+}
+
+.prof-competent {
+  background: rgba(74, 158, 255, 0.15);
+  color: #4a9eff;
+  border: 1px solid #4a9eff;
+}
+
+.prof-expert {
+  background: rgba(106, 173, 122, 0.15);
+  color: var(--color-green-bright);
+  border: 1px solid var(--color-green);
+}
+
+/* Skills category grouping */
+.skills-category-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-sm) 0;
+  margin: var(--space-md) 0 var(--space-xs);
+  border-bottom: 1px solid var(--color-border);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-secondary);
+}
+
+/* ── Section heading (generic) ─────────────────────────────── */
+.section-heading {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-secondary);
+  margin: var(--space-md) 0 var(--space-xs);
+  padding-bottom: var(--space-xs);
+  border-bottom: 1px solid var(--color-border);
+}
+
+/* ── SHTF Power: Two-table layout ──────────────────────────── */
+.power-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xl);
+  padding: var(--space-md) 0;
+}
+
+.power-subsection-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-sm);
+}
+
+/* Dry fire stats */
+.dryfire-stats {
+  display: flex;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+  padding: var(--space-md) var(--space-lg);
+  background: var(--color-bg-panel);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-md);
+}
+
+.dryfire-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dryfire-stat-value {
+  font-family: var(--font-mono);
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--color-green-bright);
+}
+
+.dryfire-stat-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+}
+
+/* Dry fire session cards */
+.dry-session-card {
+  background: var(--color-bg-panel);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-sm);
+  overflow: hidden;
+}
+
+.dry-session-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  flex-wrap: wrap;
+}
+
+.dry-session-date {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.dry-session-weapon {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+}
+
+.dry-session-meta {
+  display: flex;
+  gap: var(--space-sm);
+  margin-left: auto;
+  align-items: center;
+}
+
+.dry-session-body {
+  padding: var(--space-sm) var(--space-md);
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dry-session-field {
+  display: flex;
+  gap: var(--space-sm);
+  font-size: 0.8rem;
+}
+
+.dry-session-field-label {
+  color: var(--color-text-muted);
+  min-width: 90px;
+  flex-shrink: 0;
+}
+
+.dry-session-field-value {
+  color: var(--color-text-secondary);
 }

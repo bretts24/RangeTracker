@@ -4,6 +4,8 @@ window.LoadoutModule = (() => {
   let _initialized = false
   let _items = []
   let _attachMap = {}
+  let _maintMap = {}
+  let _dopeMap = {}
   let _searchQuery = ''
 
   const WEAPON_CATEGORIES = ['rifle', 'pistol', 'shotgun', 'smg', 'pcc', 'other_weapon']
@@ -65,9 +67,13 @@ window.LoadoutModule = (() => {
   }
 
   async function loadAll() {
-    const [itemsResult, attachResult] = await Promise.all([
+    const [itemsResult, attachResult, cleaningsResult, malfunctionsResult, partsResult, dopeResult] = await Promise.all([
       window.sb.from('loadout_items').select('*').eq('user_id', _userId).order('created_at', { ascending: true }),
       window.sb.from('weapon_attachments').select('*').eq('user_id', _userId).order('created_at', { ascending: true }),
+      window.sb.from('weapon_cleanings').select('*').eq('user_id', _userId).order('cleaned_date', { ascending: false }),
+      window.sb.from('weapon_malfunctions').select('*').eq('user_id', _userId).order('mal_date', { ascending: false }),
+      window.sb.from('weapon_parts_replaced').select('*').eq('user_id', _userId).order('replaced_date', { ascending: false }),
+      window.sb.from('weapon_dope').select('*, weapon_dope_data(*)').eq('user_id', _userId).order('created_at', { ascending: true }),
     ])
 
     if (itemsResult.error) {
@@ -85,8 +91,26 @@ window.LoadoutModule = (() => {
       attachMap[a.weapon_id].push(a)
     })
 
+    // Build maintenance map
+    const maintMap = {}
+    const ensureMaint = (wid) => {
+      if (!maintMap[wid]) maintMap[wid] = { cleanings: [], malfunctions: [], parts: [] }
+    }
+    ;(cleaningsResult.error ? [] : (cleaningsResult.data || [])).forEach(c => { ensureMaint(c.weapon_id); maintMap[c.weapon_id].cleanings.push(c) })
+    ;(malfunctionsResult.error ? [] : (malfunctionsResult.data || [])).forEach(m => { ensureMaint(m.weapon_id); maintMap[m.weapon_id].malfunctions.push(m) })
+    ;(partsResult.error ? [] : (partsResult.data || [])).forEach(p => { ensureMaint(p.weapon_id); maintMap[p.weapon_id].parts.push(p) })
+
+    // Build dope map
+    const dopeMap = {}
+    ;(dopeResult.error ? [] : (dopeResult.data || [])).forEach(d => {
+      if (!dopeMap[d.weapon_id]) dopeMap[d.weapon_id] = []
+      dopeMap[d.weapon_id].push(d)
+    })
+
     _items = items
     _attachMap = attachMap
+    _maintMap = maintMap
+    _dopeMap = dopeMap
 
     // Publish stats to profile header
     const weapons     = items.filter(i => WEAPON_CATEGORIES.includes(i.category)).length
@@ -171,6 +195,9 @@ window.LoadoutModule = (() => {
       bindWeaponCardToggles()
       bindRemoveAttachmentButtons()
       bindEditAttachmentButtons()
+      bindWeaponSubSectionToggles()
+      bindMaintenanceBtns()
+      bindDopeBtns()
     }
   }
 
@@ -221,6 +248,19 @@ window.LoadoutModule = (() => {
           </div>
         `).join('')}</div>`
 
+    // Maintenance summary meta
+    const maint = _maintMap[weapon.id] || { cleanings: [], malfunctions: [], parts: [] }
+    const lastCleaning = maint.cleanings[0]
+    const maintMeta = lastCleaning
+      ? `Last cleaned ${Utils.formatDate(lastCleaning.cleaned_date)}`
+      : 'No records'
+
+    // Dope summary meta
+    const dopeCards = _dopeMap[weapon.id] || []
+    const dopeMeta = dopeCards.length > 0
+      ? `${dopeCards.length} card${dopeCards.length !== 1 ? 's' : ''}`
+      : 'No cards'
+
     return `
       <div class="weapon-card" data-weapon-id="${weapon.id}">
         <div class="weapon-card-header" data-weapon-toggle="${weapon.id}"
@@ -240,6 +280,32 @@ window.LoadoutModule = (() => {
           </div>
         </div>
         <div class="weapon-card-build" id="weapon-build-${weapon.id}">${attHTML}</div>
+
+        <div class="weapon-subsec-header" data-subsection="maint" data-weapon-id="${weapon.id}">
+          <div class="weapon-subsec-title">
+            🔧 Maintenance
+            <span class="weapon-subsec-meta">${maintMeta}</span>
+          </div>
+          <div class="weapon-subsec-actions">
+            <button class="btn btn-secondary btn-sm wm-clean-btn" data-weapon-id="${weapon.id}">+ Log Cleaning</button>
+            <button class="btn btn-secondary btn-sm wm-mal-btn" data-weapon-id="${weapon.id}">+ Malfunction</button>
+            <button class="btn btn-secondary btn-sm wm-part-btn" data-weapon-id="${weapon.id}">+ Replace Part</button>
+          </div>
+          <span class="weapon-subsec-chevron" aria-hidden="true">▼</span>
+        </div>
+        <div class="weapon-card-maint" id="weapon-maint-${weapon.id}">${renderMaintSection(weapon.id)}</div>
+
+        <div class="weapon-subsec-header" data-subsection="dope" data-weapon-id="${weapon.id}">
+          <div class="weapon-subsec-title">
+            🎯 Dope Cards
+            <span class="weapon-subsec-meta">${dopeMeta}</span>
+          </div>
+          <div class="weapon-subsec-actions">
+            <button class="btn btn-primary btn-sm wd-add-btn" data-weapon-id="${weapon.id}">+ New Card</button>
+          </div>
+          <span class="weapon-subsec-chevron" aria-hidden="true">▼</span>
+        </div>
+        <div class="weapon-card-dope" id="weapon-dope-${weapon.id}">${renderDopeSection(weapon.id)}</div>
       </div>
     `
   }
@@ -1003,6 +1069,539 @@ window.LoadoutModule = (() => {
         : 'Item added to loadout!')
       await loadAll()
     })
+  }
+
+  // ── Maintenance & Dope Helpers ─────────────────────────────
+
+  function formatMalType(type) {
+    const labels = { FTF: 'FTF', FTE: 'FTE', double_feed: 'Double Feed', stovepipe: 'Stovepipe', other: 'Other' }
+    return labels[type] || type || '—'
+  }
+
+  function renderMaintSection(weaponId) {
+    const maint = _maintMap[weaponId] || { cleanings: [], malfunctions: [], parts: [] }
+
+    const cleaningsTable = maint.cleanings.length === 0
+      ? '<p class="maint-empty">No cleaning records yet.</p>'
+      : `<div style="overflow-x:auto;"><table class="data-table data-table-sm">
+          <thead><tr><th>Date</th><th>Rounds at Clean</th><th>Products</th><th>Notes</th><th></th></tr></thead>
+          <tbody>${maint.cleanings.map(c => `
+            <tr>
+              <td>${Utils.formatDate(c.cleaned_date)}</td>
+              <td>${c.round_count != null ? c.round_count.toLocaleString() : '—'}</td>
+              <td>${Utils.esc(c.products_used || '—')}</td>
+              <td>${Utils.esc(c.notes || '—')}</td>
+              <td><button class="btn btn-danger btn-sm del-cleaning-btn" data-id="${c.id}">✕</button></td>
+            </tr>`).join('')}
+          </tbody></table></div>`
+
+    const malTable = maint.malfunctions.length === 0
+      ? '<p class="maint-empty">No malfunction records.</p>'
+      : `<div style="overflow-x:auto;"><table class="data-table data-table-sm">
+          <thead><tr><th>Date</th><th>Type</th><th>Rounds</th><th>Ammo</th><th>Resolution</th><th></th></tr></thead>
+          <tbody>${maint.malfunctions.map(m => `
+            <tr>
+              <td>${Utils.formatDate(m.mal_date)}</td>
+              <td><span class="mal-badge mal-${Utils.esc(m.mal_type || 'other')}">${formatMalType(m.mal_type)}</span></td>
+              <td>${m.round_count != null ? m.round_count.toLocaleString() : '—'}</td>
+              <td>${Utils.esc(m.ammo_used || '—')}</td>
+              <td>${Utils.esc(m.resolution || '—')}</td>
+              <td><button class="btn btn-danger btn-sm del-malfunction-btn" data-id="${m.id}">✕</button></td>
+            </tr>`).join('')}
+          </tbody></table></div>`
+
+    const partsTable = maint.parts.length === 0
+      ? '<p class="maint-empty">No part replacement records.</p>'
+      : `<div style="overflow-x:auto;"><table class="data-table data-table-sm">
+          <thead><tr><th>Part</th><th>Date</th><th>Rounds at Replace</th><th>Notes</th><th></th></tr></thead>
+          <tbody>${maint.parts.map(p => `
+            <tr>
+              <td>${Utils.esc(p.part_name)}</td>
+              <td>${Utils.formatDate(p.replaced_date)}</td>
+              <td>${p.round_count != null ? p.round_count.toLocaleString() : '—'}</td>
+              <td>${Utils.esc(p.notes || '—')}</td>
+              <td><button class="btn btn-danger btn-sm del-part-btn" data-id="${p.id}">✕</button></td>
+            </tr>`).join('')}
+          </tbody></table></div>`
+
+    return `
+      <div class="maint-subsec"><div class="maint-subsec-title">Cleanings</div>${cleaningsTable}</div>
+      <div class="maint-subsec"><div class="maint-subsec-title">Malfunctions</div>${malTable}</div>
+      <div class="maint-subsec"><div class="maint-subsec-title">Parts Replaced</div>${partsTable}</div>
+    `
+  }
+
+  function renderDopeSection(weaponId) {
+    const cards = _dopeMap[weaponId] || []
+    if (cards.length === 0) {
+      return '<p class="maint-empty">No dope cards. Hit "+ New Card" to record your zero data.</p>'
+    }
+    return cards.map(card => {
+      const sortedData = [...(card.weapon_dope_data || [])].sort((a, b) => a.distance_yd - b.distance_yd)
+      const holdUnit = Utils.esc(card.hold_unit || 'MOA')
+      const dataHTML = sortedData.length === 0
+        ? '<p class="maint-empty" style="margin:8px 0 0;">No distance data yet — hit "+ Distance" to add holds.</p>'
+        : `<div style="overflow-x:auto;"><table class="dope-table">
+            <thead><tr>
+              <th>Dist (yd)</th>
+              <th>Elev (${holdUnit})</th>
+              <th>Wind (${holdUnit})</th>
+              <th>Notes</th>
+              <th></th>
+            </tr></thead>
+            <tbody>${sortedData.map(dp => `
+              <tr>
+                <td class="dope-dist">${dp.distance_yd}</td>
+                <td>${dp.elevation_hold != null ? dp.elevation_hold : '—'}</td>
+                <td>${dp.windage_hold != null ? dp.windage_hold : '—'}</td>
+                <td>${Utils.esc(dp.notes || '—')}</td>
+                <td><button class="btn btn-danger btn-sm del-dope-data-btn" data-id="${dp.id}">✕</button></td>
+              </tr>`).join('')}
+            </tbody></table></div>`
+
+      return `
+        <div class="dope-card" data-dope-id="${card.id}">
+          <div class="dope-card-header">
+            <div class="dope-card-info">
+              <span class="dope-card-optic">${Utils.esc(card.optic_name || 'Unknown Optic')}</span>
+              ${card.zero_distance_yd ? `<span class="dope-card-tag">${card.zero_distance_yd}yd zero</span>` : ''}
+              ${card.ammo_used ? `<span class="dope-card-tag">${Utils.esc(card.ammo_used)}</span>` : ''}
+              ${card.zero_date ? `<span class="dope-card-tag muted">Zeroed ${Utils.formatDate(card.zero_date)}</span>` : ''}
+            </div>
+            <div class="dope-card-actions">
+              <button class="btn btn-secondary btn-sm dope-add-data-btn"
+                data-dope-id="${card.id}" data-weapon-id="${card.weapon_id}" data-hold-unit="${Utils.esc(card.hold_unit || 'MOA')}">+ Distance</button>
+              <button class="btn btn-secondary btn-sm dope-print-btn" data-dope-id="${card.id}">Print</button>
+              <button class="btn btn-danger btn-sm del-dope-btn" data-id="${card.id}">✕</button>
+            </div>
+          </div>
+          ${dataHTML}
+          ${card.notes ? `<div class="dope-card-notes">${Utils.esc(card.notes)}</div>` : ''}
+        </div>`
+    }).join('')
+  }
+
+  // ── Sub-section Toggle Bindings ─────────────────────────────
+
+  function bindWeaponSubSectionToggles() {
+    document.querySelectorAll('.weapon-subsec-header').forEach(header => {
+      header.addEventListener('click', (e) => {
+        if (e.target.closest('button')) return
+        const subsection = header.dataset.subsection  // 'maint' or 'dope'
+        const card = header.closest('.weapon-card')
+        card.classList.toggle(`weapon-${subsection}-open`)
+        const chevron = header.querySelector('.weapon-subsec-chevron')
+        if (chevron) chevron.style.transform = card.classList.contains(`weapon-${subsection}-open`) ? 'rotate(180deg)' : ''
+      })
+    })
+  }
+
+  // ── Maintenance Button Bindings ─────────────────────────────
+
+  function bindMaintenanceBtns() {
+    document.querySelectorAll('.wm-clean-btn').forEach(btn =>
+      btn.addEventListener('click', () => openLogCleaningModal(btn.dataset.weaponId)))
+    document.querySelectorAll('.wm-mal-btn').forEach(btn =>
+      btn.addEventListener('click', () => openLogMalfunctionModal(btn.dataset.weaponId)))
+    document.querySelectorAll('.wm-part-btn').forEach(btn =>
+      btn.addEventListener('click', () => openLogPartModal(btn.dataset.weaponId)))
+
+    document.querySelectorAll('.del-cleaning-btn').forEach(btn => {
+      btn.addEventListener('click', () => Utils.confirmDialog('Delete this cleaning record?', async () => {
+        const { error } = await window.sb.from('weapon_cleanings').delete().eq('id', btn.dataset.id)
+        if (error) { Utils.showToast('Delete failed: ' + error.message, 'error'); return }
+        Utils.showToast('Cleaning record deleted.')
+        await loadAll()
+      }, 'Delete Record'))
+    })
+
+    document.querySelectorAll('.del-malfunction-btn').forEach(btn => {
+      btn.addEventListener('click', () => Utils.confirmDialog('Delete this malfunction record?', async () => {
+        const { error } = await window.sb.from('weapon_malfunctions').delete().eq('id', btn.dataset.id)
+        if (error) { Utils.showToast('Delete failed: ' + error.message, 'error'); return }
+        Utils.showToast('Malfunction record deleted.')
+        await loadAll()
+      }, 'Delete Record'))
+    })
+
+    document.querySelectorAll('.del-part-btn').forEach(btn => {
+      btn.addEventListener('click', () => Utils.confirmDialog('Delete this parts record?', async () => {
+        const { error } = await window.sb.from('weapon_parts_replaced').delete().eq('id', btn.dataset.id)
+        if (error) { Utils.showToast('Delete failed: ' + error.message, 'error'); return }
+        Utils.showToast('Parts record deleted.')
+        await loadAll()
+      }, 'Delete Record'))
+    })
+  }
+
+  function openLogCleaningModal(weaponId) {
+    const weapon = _items.find(i => i.id === weaponId)
+    Utils.openModal(`Log Cleaning — ${weapon ? Utils.esc(weapon.name) : ''}`, `
+      <form id="cleaning-form" autocomplete="off">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Date <span style="color:var(--color-red)">*</span></label>
+            <input type="date" name="cleaned_date" class="form-input" value="${new Date().toISOString().slice(0,10)}" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Total Rounds Through Gun</label>
+            <input type="number" name="round_count" class="form-input" placeholder="e.g. 1500" min="0" max="999999" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Products Used</label>
+          <input type="text" name="products_used" class="form-input" placeholder="e.g. Hoppes No.9, Ballistol, CLP" maxlength="200" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Notes</label>
+          <textarea name="notes" class="form-textarea" placeholder="Condition found, inspection notes, etc."></textarea>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="Utils.closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="cleaning-submit">Save</button>
+        </div>
+      </form>
+    `)
+    document.getElementById('cleaning-form').addEventListener('submit', async (e) => {
+      e.preventDefault()
+      const fd = new FormData(e.target)
+      const btn = document.getElementById('cleaning-submit')
+      btn.disabled = true; btn.textContent = 'Saving...'
+      const { error } = await window.sb.from('weapon_cleanings').insert({
+        weapon_id: weaponId, user_id: _userId,
+        cleaned_date: fd.get('cleaned_date'),
+        round_count: fd.get('round_count') ? parseInt(fd.get('round_count')) : null,
+        products_used: fd.get('products_used').trim() || null,
+        notes: fd.get('notes').trim() || null,
+      })
+      if (error) { Utils.showToast('Save failed: ' + error.message, 'error'); btn.disabled = false; btn.textContent = 'Save'; return }
+      Utils.closeModal(); Utils.showToast('Cleaning logged!'); await loadAll()
+    })
+  }
+
+  function openLogMalfunctionModal(weaponId) {
+    const weapon = _items.find(i => i.id === weaponId)
+    Utils.openModal(`Log Malfunction — ${weapon ? Utils.esc(weapon.name) : ''}`, `
+      <form id="mal-form" autocomplete="off">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Date <span style="color:var(--color-red)">*</span></label>
+            <input type="date" name="mal_date" class="form-input" value="${new Date().toISOString().slice(0,10)}" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Type <span style="color:var(--color-red)">*</span></label>
+            <select name="mal_type" class="form-select" required>
+              <option value="FTF">FTF — Failure to Feed</option>
+              <option value="FTE">FTE — Failure to Eject</option>
+              <option value="double_feed">Double Feed</option>
+              <option value="stovepipe">Stovepipe</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Rounds at Time of Malfunction</label>
+            <input type="number" name="round_count" class="form-input" placeholder="e.g. 2347" min="0" max="999999" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Ammo Used</label>
+            <input type="text" name="ammo_used" class="form-input" placeholder="e.g. Federal 115gr 9mm" maxlength="100" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Resolution</label>
+          <input type="text" name="resolution" class="form-input" placeholder="e.g. Tap-rack cleared, replaced extractor" maxlength="200" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Notes</label>
+          <textarea name="notes" class="form-textarea" placeholder="Additional context, ammo lot, conditions, etc."></textarea>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="Utils.closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="mal-submit">Save</button>
+        </div>
+      </form>
+    `)
+    document.getElementById('mal-form').addEventListener('submit', async (e) => {
+      e.preventDefault()
+      const fd = new FormData(e.target)
+      const btn = document.getElementById('mal-submit')
+      btn.disabled = true; btn.textContent = 'Saving...'
+      const { error } = await window.sb.from('weapon_malfunctions').insert({
+        weapon_id: weaponId, user_id: _userId,
+        mal_date: fd.get('mal_date'),
+        mal_type: fd.get('mal_type'),
+        round_count: fd.get('round_count') ? parseInt(fd.get('round_count')) : null,
+        ammo_used: fd.get('ammo_used').trim() || null,
+        resolution: fd.get('resolution').trim() || null,
+        notes: fd.get('notes').trim() || null,
+      })
+      if (error) { Utils.showToast('Save failed: ' + error.message, 'error'); btn.disabled = false; btn.textContent = 'Save'; return }
+      Utils.closeModal(); Utils.showToast('Malfunction logged.'); await loadAll()
+    })
+  }
+
+  function openLogPartModal(weaponId) {
+    const weapon = _items.find(i => i.id === weaponId)
+    Utils.openModal(`Log Part Replacement — ${weapon ? Utils.esc(weapon.name) : ''}`, `
+      <form id="part-form" autocomplete="off">
+        <div class="form-group">
+          <label class="form-label">Part Name <span style="color:var(--color-red)">*</span></label>
+          <input type="text" name="part_name" class="form-input" placeholder="e.g. Recoil spring, Extractor, Barrel" required maxlength="100" />
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Date Replaced</label>
+            <input type="date" name="replaced_date" class="form-input" value="${new Date().toISOString().slice(0,10)}" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Rounds at Replacement</label>
+            <input type="number" name="round_count" class="form-input" placeholder="e.g. 5000" min="0" max="999999" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Notes</label>
+          <textarea name="notes" class="form-textarea" placeholder="Reason, brand of replacement part, condition of old part, etc."></textarea>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="Utils.closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="part-submit">Save</button>
+        </div>
+      </form>
+    `)
+    document.getElementById('part-form').addEventListener('submit', async (e) => {
+      e.preventDefault()
+      const fd = new FormData(e.target)
+      const btn = document.getElementById('part-submit')
+      btn.disabled = true; btn.textContent = 'Saving...'
+      const { error } = await window.sb.from('weapon_parts_replaced').insert({
+        weapon_id: weaponId, user_id: _userId,
+        part_name: fd.get('part_name').trim(),
+        replaced_date: fd.get('replaced_date') || null,
+        round_count: fd.get('round_count') ? parseInt(fd.get('round_count')) : null,
+        notes: fd.get('notes').trim() || null,
+      })
+      if (error) { Utils.showToast('Save failed: ' + error.message, 'error'); btn.disabled = false; btn.textContent = 'Save'; return }
+      Utils.closeModal(); Utils.showToast('Part replacement logged!'); await loadAll()
+    })
+  }
+
+  // ── Dope Card Button Bindings ───────────────────────────────
+
+  function bindDopeBtns() {
+    document.querySelectorAll('.wd-add-btn').forEach(btn =>
+      btn.addEventListener('click', () => openAddDopeCardModal(btn.dataset.weaponId)))
+
+    document.querySelectorAll('.dope-add-data-btn').forEach(btn =>
+      btn.addEventListener('click', () => openAddDopeDataModal(btn.dataset.dopeId, btn.dataset.weaponId, btn.dataset.holdUnit)))
+
+    document.querySelectorAll('.dope-print-btn').forEach(btn =>
+      btn.addEventListener('click', () => printDopeCard(btn.dataset.dopeId)))
+
+    document.querySelectorAll('.del-dope-btn').forEach(btn => {
+      btn.addEventListener('click', () => Utils.confirmDialog('Delete this dope card and all its distance data?', async () => {
+        const { error } = await window.sb.from('weapon_dope').delete().eq('id', btn.dataset.id)
+        if (error) { Utils.showToast('Delete failed: ' + error.message, 'error'); return }
+        Utils.showToast('Dope card deleted.'); await loadAll()
+      }, 'Delete Card'))
+    })
+
+    document.querySelectorAll('.del-dope-data-btn').forEach(btn => {
+      btn.addEventListener('click', () => Utils.confirmDialog('Delete this distance data point?', async () => {
+        const { error } = await window.sb.from('weapon_dope_data').delete().eq('id', btn.dataset.id)
+        if (error) { Utils.showToast('Delete failed: ' + error.message, 'error'); return }
+        Utils.showToast('Data point deleted.'); await loadAll()
+      }, 'Delete'))
+    })
+  }
+
+  function openAddDopeCardModal(weaponId) {
+    const weapon = _items.find(i => i.id === weaponId)
+    Utils.openModal(`New Dope Card — ${weapon ? Utils.esc(weapon.name) : ''}`, `
+      <form id="dope-form" autocomplete="off">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Optic / Sight <span style="color:var(--color-red)">*</span></label>
+            <input type="text" name="optic_name" class="form-input" placeholder="e.g. Vortex Strike Eagle 1-6x, Trijicon MRO" required maxlength="100" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Hold Unit</label>
+            <select name="hold_unit" class="form-select">
+              <option value="MOA">MOA</option>
+              <option value="MIL">MIL</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Zero Distance (yd)</label>
+            <input type="number" name="zero_distance_yd" class="form-input" placeholder="e.g. 100" min="1" max="2000" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Zero Date</label>
+            <input type="date" name="zero_date" class="form-input" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Ammo Used at Zero</label>
+          <input type="text" name="ammo_used" class="form-input" placeholder="e.g. Federal Gold Medal 77gr OTM, PMC Bronze 55gr FMJ" maxlength="100" />
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Rounds at Zero</label>
+            <input type="number" name="rounds_at_zero" class="form-input" placeholder="Total rds through gun" min="0" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Altitude (ft)</label>
+            <input type="number" name="altitude_ft" class="form-input" placeholder="e.g. 500" min="-1000" max="20000" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Temperature (°F)</label>
+            <input type="number" name="temp_f" class="form-input" placeholder="e.g. 72" min="-60" max="140" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Notes</label>
+          <textarea name="notes" class="form-textarea" placeholder="Conditions, lighting, range notes, etc."></textarea>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="Utils.closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="dope-submit">Save Dope Card</button>
+        </div>
+      </form>
+    `)
+    document.getElementById('dope-form').addEventListener('submit', async (e) => {
+      e.preventDefault()
+      const fd = new FormData(e.target)
+      const btn = document.getElementById('dope-submit')
+      btn.disabled = true; btn.textContent = 'Saving...'
+      const { error } = await window.sb.from('weapon_dope').insert({
+        weapon_id: weaponId, user_id: _userId,
+        optic_name: fd.get('optic_name').trim(),
+        hold_unit: fd.get('hold_unit'),
+        zero_distance_yd: fd.get('zero_distance_yd') ? parseInt(fd.get('zero_distance_yd')) : null,
+        zero_date: fd.get('zero_date') || null,
+        ammo_used: fd.get('ammo_used').trim() || null,
+        rounds_at_zero: fd.get('rounds_at_zero') ? parseInt(fd.get('rounds_at_zero')) : null,
+        altitude_ft: fd.get('altitude_ft') ? parseInt(fd.get('altitude_ft')) : null,
+        temp_f: fd.get('temp_f') ? parseInt(fd.get('temp_f')) : null,
+        notes: fd.get('notes').trim() || null,
+      })
+      if (error) { Utils.showToast('Save failed: ' + error.message, 'error'); btn.disabled = false; btn.textContent = 'Save Dope Card'; return }
+      Utils.closeModal(); Utils.showToast('Dope card created!'); await loadAll()
+    })
+  }
+
+  function openAddDopeDataModal(dopeId, weaponId, holdUnit) {
+    Utils.openModal(`Add Distance Data — ${holdUnit} holds`, `
+      <form id="dope-data-form" autocomplete="off">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Distance (yd) <span style="color:var(--color-red)">*</span></label>
+            <input type="number" name="distance_yd" class="form-input" placeholder="e.g. 300" required min="1" max="3000" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Elevation Hold (${Utils.esc(holdUnit)})</label>
+            <input type="number" name="elevation_hold" class="form-input" placeholder="e.g. 4.25" step="0.01" min="-99" max="999" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Windage Hold (${Utils.esc(holdUnit)})</label>
+            <input type="number" name="windage_hold" class="form-input" placeholder="e.g. 0.5" step="0.01" min="-99" max="999" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Notes</label>
+          <input type="text" name="notes" class="form-input" placeholder="e.g. Full value 10mph wind hold" maxlength="200" />
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="Utils.closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="dope-data-submit">Add Distance</button>
+        </div>
+      </form>
+    `)
+    document.getElementById('dope-data-form').addEventListener('submit', async (e) => {
+      e.preventDefault()
+      const fd = new FormData(e.target)
+      const btn = document.getElementById('dope-data-submit')
+      btn.disabled = true; btn.textContent = 'Saving...'
+      const { error } = await window.sb.from('weapon_dope_data').insert({
+        dope_id: dopeId,
+        distance_yd: parseInt(fd.get('distance_yd')),
+        elevation_hold: fd.get('elevation_hold') !== '' ? parseFloat(fd.get('elevation_hold')) : null,
+        windage_hold: fd.get('windage_hold') !== '' ? parseFloat(fd.get('windage_hold')) : null,
+        notes: fd.get('notes').trim() || null,
+      })
+      if (error) { Utils.showToast('Save failed: ' + error.message, 'error'); btn.disabled = false; btn.textContent = 'Add Distance'; return }
+      Utils.closeModal(); Utils.showToast('Distance data added!'); await loadAll()
+    })
+  }
+
+  function printDopeCard(dopeId) {
+    // Find card in _dopeMap
+    let card = null
+    let weaponName = ''
+    for (const [wId, cards] of Object.entries(_dopeMap)) {
+      card = cards.find(c => c.id === dopeId)
+      if (card) { const w = _items.find(i => i.id === wId); weaponName = w ? w.name : ''; break }
+    }
+    if (!card) return
+
+    const sortedData = [...(card.weapon_dope_data || [])].sort((a, b) => a.distance_yd - b.distance_yd)
+    const holdUnit = card.hold_unit || 'MOA'
+
+    let html = `<!DOCTYPE html><html><head><title>Dope Card</title>
+    <style>
+      @page { size: landscape; margin: 1.5cm; }
+      body { font-family: Courier New, monospace; color: #000; background: #fff; padding: 0; }
+      h1 { font-size: 1.1rem; text-transform: uppercase; letter-spacing: 0.1em; border-bottom: 2px solid #000; margin: 0 0 6px; }
+      .meta { font-size: 0.7rem; color: #555; margin-bottom: 14px; display: flex; gap: 20px; flex-wrap: wrap; }
+      .meta span { white-space: nowrap; }
+      table { width: 100%; border-collapse: collapse; }
+      th { text-align: left; border-bottom: 2px solid #000; padding: 5px 12px; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; }
+      td { padding: 8px 12px; border-bottom: 1px solid #ccc; font-size: 1rem; }
+      td:first-child { font-size: 1.2rem; font-weight: bold; }
+      .footer { margin-top: 16px; font-size: 0.65rem; color: #aaa; }
+    </style></head><body>`
+
+    html += `<h1>${Utils.esc(weaponName)}${card.optic_name ? ' — ' + Utils.esc(card.optic_name) : ''}</h1>`
+    html += `<div class="meta">`
+    if (card.zero_distance_yd) html += `<span>Zero: ${card.zero_distance_yd}yd</span>`
+    if (card.zero_date) html += `<span>Zeroed: ${Utils.formatDate(card.zero_date)}</span>`
+    if (card.ammo_used) html += `<span>Ammo: ${Utils.esc(card.ammo_used)}</span>`
+    if (card.altitude_ft) html += `<span>Alt: ${card.altitude_ft}ft</span>`
+    if (card.temp_f) html += `<span>Temp: ${card.temp_f}°F</span>`
+    if (card.rounds_at_zero) html += `<span>Rds at zero: ${card.rounds_at_zero.toLocaleString()}</span>`
+    html += `</div>`
+
+    if (sortedData.length > 0) {
+      html += `<table><thead><tr>
+        <th>Distance (yd)</th>
+        <th>Elevation (${Utils.esc(holdUnit)})</th>
+        <th>Windage (${Utils.esc(holdUnit)})</th>
+        <th>Notes</th>
+      </tr></thead><tbody>`
+      sortedData.forEach(dp => {
+        html += `<tr>
+          <td>${dp.distance_yd}</td>
+          <td>${dp.elevation_hold != null ? dp.elevation_hold : '—'}</td>
+          <td>${dp.windage_hold != null ? dp.windage_hold : '—'}</td>
+          <td style="font-size:0.85rem;">${Utils.esc(dp.notes || '')}</td>
+        </tr>`
+      })
+      html += `</tbody></table>`
+    } else {
+      html += '<p>No distance data on this dope card.</p>'
+    }
+
+    if (card.notes) html += `<div class="footer">Notes: ${Utils.esc(card.notes)}</div>`
+    html += `<div class="footer">Printed ${new Date().toLocaleDateString()} — LastStandLog</div>`
+    html += `</body></html>`
+
+    const win = window.open('', '_blank')
+    win.document.write(html)
+    win.document.close()
+    win.print()
   }
 
   return { init }

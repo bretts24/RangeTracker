@@ -66,6 +66,10 @@
       <div class="toolbar">
         <span class="toolbar-title">Range Log</span>
         <div class="toolbar-actions">
+          <div class="view-toggle" role="group" aria-label="Range log view">
+            <button class="view-toggle-btn active" id="rangelog-live-btn" data-view="live">Live Fire</button>
+            <button class="view-toggle-btn" id="rangelog-dry-btn" data-view="dry">Dry Fire</button>
+          </div>
           <button class="btn btn-secondary btn-sm" id="rangelog-export-btn" title="Export to CSV">↓ CSV</button>
           <button class="btn btn-primary" id="rangelog-add-btn">+ New Session</button>
         </div>
@@ -92,6 +96,8 @@
         <button class="shtf-tab-btn" data-shtf="prepplans" role="tab" aria-selected="false">Prep Plans</button>
         <button class="shtf-tab-btn" data-shtf="bugout"   role="tab" aria-selected="false">Bug-Out Plans</button>
         <button class="shtf-tab-btn" data-shtf="seeds"    role="tab" aria-selected="false">Seed Bank</button>
+        <button class="shtf-tab-btn" data-shtf="power"    role="tab" aria-selected="false">Power</button>
+        <button class="shtf-tab-btn" data-shtf="skills"   role="tab" aria-selected="false">Skills</button>
       </nav>
 
       <div id="shtf-overview" class="shtf-subsection"></div>
@@ -127,6 +133,17 @@
       <div id="shtf-seeds" class="shtf-subsection">
         <div class="toolbar"><span></span><button class="btn btn-primary shtf-add-btn" data-type="seeds">+ Add Seeds</button></div>
         <div id="shtf-seeds-content"></div>
+      </div>
+      <div id="shtf-power" class="shtf-subsection">
+        <div class="toolbar"><span></span>
+          <button class="btn btn-secondary btn-sm shtf-add-btn" data-type="power_asset" style="margin-right:8px;">+ Add Asset</button>
+          <button class="btn btn-primary shtf-add-btn" data-type="fuel">+ Add Fuel</button>
+        </div>
+        <div id="shtf-power-content"></div>
+      </div>
+      <div id="shtf-skills" class="shtf-subsection">
+        <div class="toolbar"><span></span><button class="btn btn-primary shtf-add-btn" data-type="skills">+ Add Skill</button></div>
+        <div id="shtf-skills-content"></div>
       </div>
     </section>
 
